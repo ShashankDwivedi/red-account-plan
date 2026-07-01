@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { Assessment } from './types';
+import { isNegativeQuestion, toIsRisk } from './polarity';
 
 /**
  * Extracts assessment answers from an Excel workbook.
@@ -113,6 +114,36 @@ const HEADER_HINTS = [
   'y/n',
 ];
 
+/** Words that, when they ARE the label, indicate a header row (any row). */
+const LABEL_HEADER_WORDS = new Set([
+  'criteria',
+  'criterion',
+  'question',
+  'questions',
+  'item',
+  'items',
+  'assessment',
+  'checklist',
+  'description',
+  'category',
+  'area',
+  'topic',
+  'metric',
+  'metrics',
+]);
+
+/** Raw text values in the answer column that indicate a header row (any row). */
+const ANSWER_HEADER_WORDS = new Set([
+  'checked',
+  'answer',
+  'response',
+  'status',
+  'yes/no',
+  'y/n',
+  'value',
+  'result',
+]);
+
 /**
  * Parse a worksheet by scanning each row for:
  *   - a label cell (longest text in the row), and
@@ -147,12 +178,14 @@ function parseWorksheet(ws: ExcelJS.Worksheet): Assessment[] {
     }
 
     // Find the answer: prefer a boolean-ish cell that isn't the label.
+    let answerRawText = '';
     for (const c of cells) {
       const t = cellText(c.value);
       if (t === label && label.length > 12) continue;
       const interpreted = interpretValue(c.value);
       if (interpreted !== undefined && t.length <= 12) {
         answer = interpreted;
+        answerRawText = t;
         break;
       }
     }
@@ -165,17 +198,28 @@ function parseWorksheet(ws: ExcelJS.Worksheet): Assessment[] {
       }
     }
 
-    // Skip obvious header rows.
+    // Skip header rows. Three ways to detect one:
+    //  a) row 1 whose label looks like a header hint;
+    //  b) the label itself is a header word (e.g. "Criteria", "Question");
+    //  c) the answer cell's raw text is a header word (e.g. "Checked", "Status")
+    //     — this catches header rows on any row, e.g. a "Criteria | Checked" row
+    //     where "Checked" would otherwise be misread as a ticked answer.
     const lowerLabel = label.toLowerCase();
+    const lowerAnswerText = answerRawText.toLowerCase();
     const isHeaderRow =
-      rowNumber === 1 &&
-      HEADER_HINTS.some((h) => lowerLabel === h || lowerLabel.startsWith(h));
+      (rowNumber === 1 &&
+        HEADER_HINTS.some((h) => lowerLabel === h || lowerLabel.startsWith(h))) ||
+      LABEL_HEADER_WORDS.has(lowerLabel) ||
+      ANSWER_HEADER_WORDS.has(lowerAnswerText);
 
     if (label && answer !== undefined && !isHeaderRow && label.length > 2) {
+      const negative = isNegativeQuestion(label);
       results.push({
         tab: ws.name,
         question: label,
         answer,
+        negative,
+        isRisk: toIsRisk(answer, negative),
         notes: notes || undefined,
       });
     }
@@ -208,10 +252,14 @@ async function parseFormControls(
           ctrl.fmlaLink?.checked === true;
         const text = (ctrl.text || ctrl.name || '').toString().trim();
         if (text) {
+          const negative = isNegativeQuestion(text);
+          const ans = Boolean(checked);
           extra.push({
             tab: ws.name,
             question: text,
-            answer: Boolean(checked),
+            answer: ans,
+            negative,
+            isRisk: toIsRisk(ans, negative),
           });
         }
       }

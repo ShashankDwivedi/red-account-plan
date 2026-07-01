@@ -87,6 +87,29 @@ Excel templates encode "checkboxes" in several ways. This app handles the common
 | `Yes`, `Y`, `x`, `✓`, `✔`, `1`, `[x]` | ✅ Yes         |
 | `FALSE`, `No`, `N`, blank, `0`, `[ ]` | ❌ No          |
 
+### Positive vs. negative (risk-flag) questions
+
+Most questions are **positive** — ticked (Yes) is *good*. But some are **risk
+flags** where ticking the box signals a *problem*, so ticked = bad. These are
+detected automatically (see `src/polarity.ts`) and correctly **lower** the
+health score. Examples:
+
+- Did Champion Leave the Company
+- Did Sponsor Leave the Company?
+- Is there a re-org that happened?
+- Training Gap
+- Customer Resource Constraints
+- Customer Technical Constraints
+- Vulnerability Constraints
+- Infosec Constraints
+
+Internally every answer is normalized to a health signal (`isRisk`):
+
+| Question type | Ticked (Yes) | Unticked (No) |
+| ------------- | ------------ | ------------- |
+| Positive      | healthy ✅   | problem ❌    |
+| Negative/risk | problem ❌   | healthy ✅    |
+
 Each row is scanned for a **label** (the question text) and an **answer** (a
 boolean-ish marker). Legacy form-control checkboxes are read from the raw sheet
 XML when present.

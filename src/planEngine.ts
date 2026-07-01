@@ -40,11 +40,21 @@ function summarizeTabs(items: Assessment[]): TabSummary[] {
 
   const summaries: TabSummary[] = [];
   for (const [tab, tabItems] of byTab) {
-    const yes = tabItems.filter((i) => i.answer).length;
+    // Health-aware counts: "yes" here means HEALTHY (not a risk), "no" means a
+    // problem. This keeps polarity correct — a ticked risk flag counts as a
+    // problem, not a positive.
+    const healthy = tabItems.filter((i) => !i.isRisk).length;
     const total = tabItems.length;
-    const no = total - yes;
-    const score = total > 0 ? Math.round((yes / total) * 100) : 0;
-    summaries.push({ tab, total, yes, no, score, items: tabItems });
+    const problems = total - healthy;
+    const score = total > 0 ? Math.round((healthy / total) * 100) : 0;
+    summaries.push({
+      tab,
+      total,
+      yes: healthy,
+      no: problems,
+      score,
+      items: tabItems,
+    });
   }
   summaries.sort((a, b) => a.score - b.score);
   return summaries;
@@ -104,6 +114,11 @@ const PILLAR_KEYWORDS: Record<Pillar, string[]> = {
     'meeting',
     'engagement',
     'decision maker',
+    're-org',
+    'reorg',
+    'reorganization',
+    'reorganisation',
+    'leadership change',
   ],
   Sentiment: [
     'nps',
@@ -144,6 +159,14 @@ const PILLAR_KEYWORDS: Record<Pillar, string[]> = {
     'defect',
     'response time',
     'product gap',
+    'technical constraint',
+    'resource constraint',
+    'vulnerability',
+    'vulnerabilities',
+    'infosec',
+    'information security',
+    'security constraint',
+    'compliance',
   ],
 };
 
@@ -677,16 +700,18 @@ export function buildAnalysis(
 ): AnalysisResult {
   const tabs = summarizeTabs(items);
 
+  // Overall health is computed on the normalized signal (isRisk), so ticked
+  // risk-flag questions correctly reduce the score instead of raising it.
   const total = items.length;
-  const yes = items.filter((i) => i.answer).length;
-  const no = total - yes;
-  const score = total > 0 ? Math.round((yes / total) * 100) : 0;
+  const healthy = items.filter((i) => !i.isRisk).length;
+  const problems = total - healthy;
+  const score = total > 0 ? Math.round((healthy / total) * 100) : 0;
   const status = statusFromScore(score);
 
-  // Risks = unmet criteria; strengths = met criteria.
-  // Sort risks worst-pillar-first later; keep source order here.
-  const topRisks = items.filter((i) => !i.answer);
-  const strengths = items.filter((i) => i.answer);
+  // Risks = anything flagged as a problem (unmet positive OR ticked negative).
+  // Strengths = healthy items.
+  const topRisks = items.filter((i) => i.isRisk);
+  const strengths = items.filter((i) => !i.isRisk);
 
   // Compute per-pillar health directly from the ticked/unticked checkboxes.
   // This is what makes the plan dynamic: the plays, priorities, ordering,
@@ -707,7 +732,9 @@ export function buildAnalysis(
     }
     const ph = pillarMap.get(pillar)!;
     ph.total += 1;
-    if (item.answer) {
+    // Use the normalized health signal, not the raw answer, so a ticked risk
+    // flag lands in gaps (problems) and an unticked risk flag is a win.
+    if (!item.isRisk) {
       ph.yes += 1;
       ph.wins.push(item);
     } else {
@@ -729,7 +756,7 @@ export function buildAnalysis(
   return {
     fileName,
     generatedAt: new Date().toISOString(),
-    overall: { total, yes, no, score, status },
+    overall: { total, yes: healthy, no: problems, score, status },
     tabs,
     topRisks,
     strengths,

@@ -46,6 +46,17 @@ async function main() {
       ['No billing/procurement friction', true],
       ['An expansion opportunity has been identified', false],
     ],
+    // Risk flags: for these, TICKED (true) means a NEGATIVE impact.
+    'Risk Flags': [
+      ['Did Champion Leave the Company', true],
+      ['Did Sponsor Leave the Company?', false],
+      ['Is there a re-org that happened?', true],
+      ['Training Gap', true],
+      ['Customer Resource Constraints', false],
+      ['Customer Technical Constraints', true],
+      ['Vulnerability Costraints', false],
+      ['Infosec Constraints', false],
+    ],
   };
 
   for (const [tabName, rows] of Object.entries(tabs)) {

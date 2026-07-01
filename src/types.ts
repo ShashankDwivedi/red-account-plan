@@ -10,6 +10,21 @@ export interface Assessment {
   question: string;
   /** true = checkbox ticked (Yes), false = not ticked (No). */
   answer: boolean;
+  /**
+   * Polarity of the question.
+   *  - false (default): a positive criterion — ticked (Yes) is GOOD.
+   *  - true: a negative/risk-flag question — ticked (Yes) is BAD.
+   * e.g. "Did the champion leave the company?" ticked = a problem.
+   */
+  negative?: boolean;
+  /**
+   * Normalized health signal, independent of polarity:
+   *  - true  => this item is a PROBLEM (a risk / gap) for the account.
+   *  - false => this item is HEALTHY (a strength).
+   * For positive questions: isRisk = !answer.
+   * For negative questions: isRisk =  answer.
+   */
+  isRisk: boolean;
   /** Optional notes/comment captured from an adjacent cell. */
   notes?: string;
 }
