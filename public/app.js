@@ -203,7 +203,6 @@
             .map(function (r) {
               return (
                 '<li class="risk-item"><span class="icon">✕</span><span>' +
-                '<span class="tag">' + esc(r.tab) + '</span><br>' +
                 esc(r.question) + '</span></li>'
               );
             })
@@ -217,7 +216,6 @@
             .map(function (s) {
               return (
                 '<li class="strength-item"><span class="icon">✓</span><span>' +
-                '<span class="tag">' + esc(s.tab) + '</span><br>' +
                 esc(s.question) + '</span></li>'
               );
             })
