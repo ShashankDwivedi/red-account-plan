@@ -173,6 +173,17 @@ interface PlayTemplate {
   horizon: 30 | 60 | 90;
 }
 
+/** Per-pillar computed health, used to drive the dynamic plan. */
+interface PillarHealth {
+  pillar: Pillar;
+  yes: number;
+  no: number;
+  total: number;
+  score: number; // 0..100 (% ticked)
+  gaps: Assessment[]; // the specific unticked items
+  wins: Assessment[]; // the specific ticked items
+}
+
 const PLAYBOOK: Record<Pillar, PlayTemplate[]> = {
   Relationship: [
     {
@@ -332,6 +343,64 @@ const PLAYBOOK: Record<Pillar, PlayTemplate[]> = {
   ],
 };
 
+/**
+ * "Protect & grow" plays used when a pillar is strong (all/most boxes ticked).
+ * These keep the plan honest: we don't invent problems where the data shows none.
+ */
+const PROTECT_PLAYBOOK: Record<Pillar, Record<30 | 60 | 90, string>> = {
+  Relationship: {
+    30: 'Relationship signals are healthy. Confirm the sponsor and champion are still in seat and document the current stakeholder map so it stays current.',
+    60: 'Keep the relationship warm: maintain the existing cadence and use the goodwill to multi-thread into one additional stakeholder.',
+    90: 'Leverage the strong relationship to run a forward-looking EBR focused on the next strategic goal rather than remediation.',
+  },
+  Value: {
+    30: 'Value is being tracked well. Re-confirm the success KPIs are still the right ones and refresh the current-state numbers.',
+    60: 'Package the value already being delivered into a crisp snapshot the champion can share upward.',
+    90: 'Publish a proactive ROI report and use it to open an expansion or renewal-uplift conversation.',
+  },
+  Adoption: {
+    30: 'Adoption is solid. Confirm no recent drop in active usage and identify the next high-value workflow to activate.',
+    60: 'Deepen adoption by enabling one additional team or advanced workflow while usage momentum is strong.',
+    90: 'Formalize internal champions/power users so adoption stays self-sustaining without heavy CSM involvement.',
+  },
+  Sentiment: {
+    30: 'Sentiment is positive. Capture a fresh CSAT/NPS reading to lock in the baseline while it is strong.',
+    60: 'Nurture the goodwill and proactively ask for structured feedback to catch any early drift.',
+    90: 'Convert the positive sentiment into advocacy: pursue a reference, testimonial, or case study.',
+  },
+  Support: {
+    30: 'Support health is good. Verify there are no lurking P2/P3 issues and that SLAs remain comfortably met.',
+    60: 'Introduce lightweight proactive monitoring so any regression is caught before the customer feels it.',
+    90: 'Institutionalize a periodic technical review to keep the support experience durable.',
+  },
+  Commercial: {
+    30: 'Commercials are in good shape. Confirm the renewal date/terms and that there is no procurement or billing friction on the horizon.',
+    60: 'With a stable base, begin shaping the renewal narrative early and scan for a right-sized expansion.',
+    90: 'Secure the renewal ahead of time and progress the identified expansion opportunity.',
+  },
+};
+
+/** Human label for each pillar. */
+const PILLAR_LABEL: Record<Pillar, string> = {
+  Relationship: 'Relationship & Sponsorship',
+  Value: 'Value & ROI',
+  Adoption: 'Adoption & Enablement',
+  Sentiment: 'Sentiment & Satisfaction',
+  Support: 'Support & Product',
+  Commercial: 'Commercial & Renewal',
+};
+
+/**
+ * Severity of a pillar based on how many boxes are unticked.
+ * Drives priority so the SAME pillar can be Critical for one account and
+ * Medium for another depending on the actual checkboxes.
+ */
+function severityPriority(score: number): PlanAction['priority'] {
+  if (score < 40) return 'Critical';
+  if (score < 70) return 'High';
+  return 'Medium';
+}
+
 // ---------------------------------------------------------------------------
 // Plan assembly
 // ---------------------------------------------------------------------------
@@ -360,46 +429,73 @@ const PHASE_META: Record<
   },
 };
 
+/**
+ * Build a horizon's actions dynamically from the actual per-pillar health.
+ *
+ * - Pillars WITH gaps get a remediation play whose priority scales with how
+ *   many boxes are unticked, and whose detail cites the specific unticked items.
+ * - Pillars that are fully/mostly ticked get a lighter "protect & grow" play.
+ * - Pillars are ordered worst-first so the most critical work leads.
+ * - Nothing is force-added: if a pillar isn't in the data, it isn't in the plan.
+ */
 function buildPhase(
   horizon: 30 | 60 | 90,
-  weakPillars: Set<Pillar>,
-  gapsByPillar: Map<Pillar, Assessment[]>
+  pillarHealth: PillarHealth[],
+  status: HealthStatus
 ): PlanPhase {
   const meta = PHASE_META[horizon];
   const actions: PlanAction[] = [];
 
-  // Deterministic pillar order so Critical work leads.
-  const order: Pillar[] = [
-    'Relationship',
-    'Value',
-    'Support',
-    'Sentiment',
-    'Adoption',
-    'Commercial',
-  ];
+  // Worst pillars first (lowest score), so Critical work leads each phase.
+  const ordered = [...pillarHealth].sort((a, b) => a.score - b.score);
 
-  for (const pillar of order) {
-    if (!weakPillars.has(pillar)) continue;
-    const template = PLAYBOOK[pillar].find((p) => p.horizon === horizon);
-    if (!template) continue;
-    const gaps = gapsByPillar.get(pillar) || [];
-    const addresses =
-      gaps.length > 0
-        ? gaps
-            .slice(0, 3)
-            .map((g) => g.question)
-            .join('; ')
-        : undefined;
-    actions.push({
-      title: template.title,
-      detail: template.detail,
-      owner: template.owner,
-      priority: template.priority,
-      addresses,
-    });
+  for (const ph of ordered) {
+    const isWeak = ph.no > 0;
+
+    if (isWeak) {
+      const template = PLAYBOOK[ph.pillar].find((p) => p.horizon === horizon);
+      if (!template) continue;
+
+      // Priority scales with severity of THIS pillar for THIS account.
+      const priority = severityPriority(ph.score);
+
+      // Cite the specific unticked items so the play reflects the sheet.
+      const cited = ph.gaps.slice(0, 3).map((g) => g.question);
+      const addresses = cited.length > 0 ? cited.join('; ') : undefined;
+
+      // Dynamically enrich the detail with the pillar's severity + specifics.
+      const severityNote =
+        ph.score < 40
+          ? `This is a critical gap area — ${ph.no} of ${ph.total} checks are unmet.`
+          : ph.score < 70
+          ? `A partial gap — ${ph.no} of ${ph.total} checks are unmet.`
+          : `A minor gap — ${ph.no} of ${ph.total} checks are unmet.`;
+
+      const focus =
+        horizon === 30 && cited.length
+          ? ` Start with: ${cited[0]}.`
+          : '';
+
+      actions.push({
+        title: template.title,
+        detail: `${template.detail} ${severityNote}${focus}`,
+        owner: template.owner,
+        priority,
+        addresses,
+      });
+    } else if (ph.total > 0) {
+      // Strong pillar: protect & grow rather than fabricate a problem.
+      actions.push({
+        title: `Protect & grow: ${PILLAR_LABEL[ph.pillar]}`,
+        detail: `${PROTECT_PLAYBOOK[ph.pillar][horizon]} (All ${ph.total} checks in this area are met.)`,
+        owner: PLAYBOOK[ph.pillar].find((p) => p.horizon === horizon)?.owner || 'CSM',
+        priority: 'Medium',
+        addresses: ph.wins.slice(0, 3).map((w) => w.question).join('; ') || undefined,
+      });
+    }
   }
 
-  // Guarantee at least one action per phase even for very healthy accounts.
+  // Absolute fallback (e.g. no recognizable pillars at all).
   if (actions.length === 0) {
     actions.push({
       title:
@@ -407,7 +503,7 @@ function buildPhase(
           ? 'Sustain momentum and plan the next value chapter'
           : 'Reinforce what is working',
       detail:
-        'Account health is strong in this area. Maintain the cadence, document the winning motions, and reinvest freed-up capacity into the customer’s next strategic goal.',
+        'The assessment did not surface specific gaps for this horizon. Maintain the current cadence, document what is working, and reinvest freed-up capacity into the customer’s next strategic goal.',
       owner: 'CSM',
       priority: 'Medium',
     });
@@ -416,47 +512,128 @@ function buildPhase(
   return {
     horizon,
     label: meta.label,
-    targetStatus: meta.target,
-    objective: meta.objective,
+    targetStatus: dynamicTarget(horizon, status),
+    objective: dynamicObjective(horizon, status, ordered),
     actions,
-    successMetrics: metricsFor(horizon),
-    exitCriteria: exitFor(horizon),
+    successMetrics: metricsFor(horizon, ordered),
+    exitCriteria: exitFor(horizon, status),
   };
 }
 
-function metricsFor(horizon: 30 | 60 | 90): string[] {
-  if (horizon === 30)
-    return [
-      'Executive sponsor meeting held and joint recovery plan signed off',
-      'All P1/critical issues have owners and target dates',
-      'Baseline metrics captured for the top 3 success KPIs',
-    ];
-  if (horizon === 60)
-    return [
-      'At least one measurable customer win delivered and socialized',
-      'Active usage trending up vs. the day-30 baseline',
-      'CSAT / sentiment measurably improved vs. baseline',
-    ];
-  return [
-    'ROI / value-realization report delivered to the sponsor',
-    'Renewal path confirmed (and expansion identified where healthy)',
-    'Customer owns a sustainable adoption + governance cadence',
-  ];
+/** Target status per horizon adapts to where the account starts. */
+function dynamicTarget(horizon: 30 | 60 | 90, status: HealthStatus): HealthStatus {
+  if (status === 'Green') return 'Green'; // already green: stay green
+  if (status === 'Red') {
+    // Red needs the full climb: Red -> (stabilize) -> Yellow -> Green.
+    if (horizon === 30) return 'Red'; // realistic: still stabilizing at day 30
+    if (horizon === 60) return 'Yellow';
+    return 'Green';
+  }
+  // Yellow: closer, so reach Yellow-solid then Green.
+  if (horizon === 30) return 'Yellow';
+  if (horizon === 60) return 'Yellow';
+  return 'Green';
 }
 
-function exitFor(horizon: 30 | 60 | 90): string[] {
-  if (horizon === 30)
+/** Objective text that adapts to status and names the weakest areas. */
+function dynamicObjective(
+  horizon: 30 | 60 | 90,
+  status: HealthStatus,
+  ordered: PillarHealth[]
+): string {
+  const weakest = ordered
+    .filter((p) => p.no > 0)
+    .slice(0, 2)
+    .map((p) => PILLAR_LABEL[p.pillar]);
+
+  // Healthy account: protect-and-grow language, never "stop the bleeding".
+  if (weakest.length === 0) {
+    const greenBase: Record<30 | 60 | 90, string> = {
+      30: 'Protect the strong position. Re-confirm the signals that make this account healthy and capture a fresh baseline while everything is green.',
+      60: 'Grow from strength. Deepen adoption and value where the account is already succeeding, and open the next strategic conversation.',
+      90: 'Compound the value. Turn sustained health into advocacy, renewal certainty, and a right-sized expansion.',
+    };
+    return greenBase[horizon];
+  }
+
+  // There are real gaps: use recovery language scaled to how bad it is.
+  const base = PHASE_META[horizon].objective;
+  const focusArea =
+    horizon === 30
+      ? `Immediate focus: ${weakest.join(' and ')}.`
+      : horizon === 60
+      ? `Continue pressing on ${weakest.join(' and ')}.`
+      : `Lock in durable gains across ${weakest.join(' and ')}.`;
+  return `${base} ${focusArea}`;
+}
+
+/**
+ * Success metrics adapt to the pillars that are actually weak, so two different
+ * uploads produce different, relevant metrics.
+ */
+function metricsFor(horizon: 30 | 60 | 90, ordered: PillarHealth[]): string[] {
+  const weak = new Set(ordered.filter((p) => p.no > 0).map((p) => p.pillar));
+  const metrics: string[] = [];
+
+  if (horizon === 30) {
+    if (weak.has('Relationship')) metrics.push('Executive sponsor meeting held and joint recovery plan signed off');
+    if (weak.has('Support')) metrics.push('All P1/critical issues have owners and target dates');
+    if (weak.has('Value')) metrics.push('Baseline metrics captured for the top success KPIs');
+    if (weak.has('Adoption')) metrics.push('Adoption gap list produced from actual usage data');
+    if (weak.has('Sentiment')) metrics.push('Every open complaint logged with a recovery owner');
+    if (weak.has('Commercial')) metrics.push('Renewal date/terms confirmed and churn risk flagged to leadership');
+  } else if (horizon === 60) {
+    if (weak.has('Value')) metrics.push('At least one measurable customer win delivered and socialized');
+    if (weak.has('Adoption')) metrics.push('Active usage trending up vs. the day-30 baseline');
+    if (weak.has('Sentiment')) metrics.push('CSAT / sentiment measurably improved vs. baseline');
+    if (weak.has('Support')) metrics.push('Recurring root causes resolved and SLA framework agreed');
+    if (weak.has('Relationship')) metrics.push('Recurring governance cadence running with champion + sponsor');
+    if (weak.has('Commercial')) metrics.push('Renewal narrative drafted and billing friction removed');
+  } else {
+    if (weak.has('Value')) metrics.push('ROI / value-realization report delivered to the sponsor');
+    if (weak.has('Commercial')) metrics.push('Renewal path confirmed (and expansion identified where healthy)');
+    if (weak.has('Adoption')) metrics.push('Customer owns a sustainable adoption cadence');
+    if (weak.has('Relationship')) metrics.push('EBR delivered and multi-threaded into new stakeholders');
+    if (weak.has('Sentiment')) metrics.push('Sentiment converted into a reference or case study');
+    if (weak.has('Support')) metrics.push('Proactive monitoring and periodic technical review in place');
+  }
+
+  // Fallback for strong accounts / horizons with no weak pillar match.
+  if (metrics.length === 0) {
+    if (horizon === 30) metrics.push('Current strengths re-confirmed and baselined');
+    else if (horizon === 60) metrics.push('Momentum sustained; next strategic goal identified with the customer');
+    else metrics.push('Account re-scored and confirmed healthy; growth path agreed');
+  }
+  return metrics.slice(0, 4);
+}
+
+/** Exit criteria adapt to the account's starting status. */
+function exitFor(horizon: 30 | 60 | 90, status: HealthStatus): string[] {
+  if (horizon === 30) {
+    if (status === 'Red')
+      return [
+        'Account no longer trending toward churn; acute risk is contained',
+        'Sponsor/champion re-engaged and joint recovery plan is in motion',
+      ];
+    if (status === 'Yellow')
+      return [
+        'Open risks have named owners and target dates',
+        'Momentum plan agreed with the customer',
+      ];
     return [
-      'Account no longer trending toward churn; risk is contained',
-      'Champion re-engaged and joint plan is in motion',
+      'Strengths re-confirmed with a fresh baseline',
+      'Next strategic goal identified with the customer',
     ];
+  }
   if (horizon === 60)
     return [
       'Health signals (usage, sentiment, open issues) moving in the right direction',
-      'Customer can articulate at least one concrete win',
+      status === 'Green' ? 'At least one growth conversation opened' : 'Customer can articulate at least one concrete win',
     ];
   return [
-    'Account health assessed as Green on re-scoring',
+    status === 'Green'
+      ? 'Account remains Green on re-scoring; expansion path agreed'
+      : 'Account health assessed as Green on re-scoring',
     'Value is quantified, documented, and tied to the renewal',
   ];
 }
@@ -507,31 +684,46 @@ export function buildAnalysis(
   const status = statusFromScore(score);
 
   // Risks = unmet criteria; strengths = met criteria.
+  // Sort risks worst-pillar-first later; keep source order here.
   const topRisks = items.filter((i) => !i.answer);
   const strengths = items.filter((i) => i.answer);
 
-  // Which pillars are weak? A pillar is weak if it has any unmet criteria OR
-  // (for empty accounts) if there is nothing proving it is strong.
-  const gapsByPillar = new Map<Pillar, Assessment[]>();
-  for (const risk of topRisks) {
-    const pillar = classify(risk.question);
-    if (!gapsByPillar.has(pillar)) gapsByPillar.set(pillar, []);
-    gapsByPillar.get(pillar)!.push(risk);
+  // Compute per-pillar health directly from the ticked/unticked checkboxes.
+  // This is what makes the plan dynamic: the plays, priorities, ordering,
+  // objectives, metrics and exit criteria all derive from these numbers.
+  const pillarMap = new Map<Pillar, PillarHealth>();
+  for (const item of items) {
+    const pillar = classify(item.question);
+    if (!pillarMap.has(pillar)) {
+      pillarMap.set(pillar, {
+        pillar,
+        yes: 0,
+        no: 0,
+        total: 0,
+        score: 0,
+        gaps: [],
+        wins: [],
+      });
+    }
+    const ph = pillarMap.get(pillar)!;
+    ph.total += 1;
+    if (item.answer) {
+      ph.yes += 1;
+      ph.wins.push(item);
+    } else {
+      ph.no += 1;
+      ph.gaps.push(item);
+    }
   }
-
-  const weakPillars = new Set<Pillar>(gapsByPillar.keys());
-  // For a Red/Yellow account, always exercise the core recovery pillars so the
-  // plan is complete even if the sheet was sparse.
-  if (status !== 'Green') {
-    ['Relationship', 'Value', 'Adoption'].forEach((p) =>
-      weakPillars.add(p as Pillar)
-    );
-  }
+  const pillarHealth = Array.from(pillarMap.values()).map((ph) => ({
+    ...ph,
+    score: ph.total > 0 ? Math.round((ph.yes / ph.total) * 100) : 0,
+  }));
 
   const plan: PlanPhase[] = [
-    buildPhase(30, weakPillars, gapsByPillar),
-    buildPhase(60, weakPillars, gapsByPillar),
-    buildPhase(90, weakPillars, gapsByPillar),
+    buildPhase(30, pillarHealth, status),
+    buildPhase(60, pillarHealth, status),
+    buildPhase(90, pillarHealth, status),
   ];
 
   return {
