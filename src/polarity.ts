@@ -48,6 +48,14 @@ const NEGATIVE_PATTERNS: RegExp[] = [
   /\binfo\s?sec\b.*\bcon?straint/i,
   /\b(information\s+security|infosec|security)\s+con?straint/i,
 
+  // 9) Product Feature Gaps
+  /\bproduct\b.*\bfeature\b.*\bgap/i,
+  /\bfeature\s+gap/i,
+
+  // 10) Product Bugs
+  /\bproduct\s+bug/i,
+  /\bbug[s]?\b/i,
+
   // General negative phrasing safety net.
   /\bgap\b/i,
   /\bconstraint/i,

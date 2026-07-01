@@ -102,6 +102,8 @@ health score. Examples:
 - Customer Technical Constraints
 - Vulnerability Constraints
 - Infosec Constraints
+- Product Feature Gaps
+- Product Bugs
 
 Internally every answer is normalized to a health signal (`isRisk`):
 
