@@ -1,0 +1,71 @@
+import ExcelJS from 'exceljs';
+import path from 'path';
+
+/**
+ * Generates a demo "account health assessment" workbook with multiple tabs and
+ * a mix of ticked (Yes) / unticked (No) checkbox-style answers so you can try
+ * the app end-to-end.
+ *
+ *   npm run build && node dist/scripts/makeSample.js
+ */
+async function main() {
+  const wb = new ExcelJS.Workbook();
+
+  const tabs: Record<string, [string, boolean][]> = {
+    Relationship: [
+      ['Executive sponsor is identified and engaged', false],
+      ['We have a mobilized internal champion', false],
+      ['Key stakeholders and decision makers are mapped', true],
+      ['A regular QBR / EBR cadence is in place', false],
+      ['We are multi-threaded (3+ contacts)', false],
+    ],
+    'Value & ROI': [
+      ['Business outcomes and success criteria are documented', false],
+      ['Success KPIs are baselined with current-state metrics', false],
+      ['Customer has realized at least one measurable win', false],
+      ['An ROI / value story exists for the sponsor', false],
+    ],
+    Adoption: [
+      ['Provisioned seats/licenses are actively used', true],
+      ['Core workflows are adopted by the team', false],
+      ['Users have completed onboarding/training', true],
+      ['Product is embedded in a recurring workflow', false],
+    ],
+    Sentiment: [
+      ['Latest CSAT/NPS is positive', false],
+      ['There are no open escalations or complaints', false],
+      ['Customer would act as a reference', false],
+    ],
+    Support: [
+      ['No open P1/critical issues', true],
+      ['Support SLAs are being met', true],
+      ['Recurring root causes have been addressed', false],
+    ],
+    Commercial: [
+      ['Renewal date and contract terms are confirmed', true],
+      ['No billing/procurement friction', true],
+      ['An expansion opportunity has been identified', false],
+    ],
+  };
+
+  for (const [tabName, rows] of Object.entries(tabs)) {
+    const ws = wb.addWorksheet(tabName);
+    ws.columns = [
+      { header: 'Criteria', key: 'q', width: 55 },
+      { header: 'Checked', key: 'a', width: 12 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    for (const [question, checked] of rows) {
+      ws.addRow({ q: question, a: checked });
+    }
+  }
+
+  const outPath = path.join(process.cwd(), 'sample-account-health.xlsx');
+  await wb.xlsx.writeFile(outPath);
+  console.log('Sample workbook written to: ' + outPath);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

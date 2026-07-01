@@ -1,0 +1,20 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Connect this repo to Render (New +  ->  Blueprint) and it will auto-provision
+# the service below with no manual configuration.
+services:
+  - type: web
+    name: red-account-plan
+    runtime: node
+    plan: free
+    # Build: install deps (incl. devDeps for tsc) and compile TypeScript.
+    buildCommand: npm install && npm run build
+    # Start: run the compiled server. Render injects $PORT automatically.
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      # Ensure devDependencies (typescript, @types/*) are installed at build time.
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Red Account Plan · Customer Success 30-60-90 Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- Header -->
+      <header class="site-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-amber"></span>
+            <span class="dot dot-green"></span>
+          </span>
+          <div class="brand-text">
+            <h1>Red Account Plan</h1>
+            <p>Turn a health assessment into a 30·60·90 recovery plan</p>
+          </div>
+        </div>
+        <span class="badge-pill">Customer Success Architect</span>
+      </header>
+
+      <!-- Upload view -->
+      <main id="upload-view" class="view">
+        <section class="hero">
+          <h2 class="hero-title">
+            From <span class="rag-red">Red</span> to
+            <span class="rag-amber">Yellow</span> to
+            <span class="rag-green">Green</span>
+          </h2>
+          <p class="hero-sub">
+            Upload your account health assessment workbook. We read every tab,
+            interpret ticked checkboxes as <strong>Yes</strong> and unticked as
+            <strong>No</strong>, and generate an actionable customer success
+            plan.
+          </p>
+
+          <form id="upload-form">
+            <label
+              id="dropzone"
+              for="file-input"
+              class="dropzone"
+              tabindex="0"
+              role="button"
+              aria-label="Upload an Excel file"
+            >
+              <input
+                id="file-input"
+                type="file"
+                accept=".xlsx,.xls"
+                hidden
+              />
+              <div class="dropzone-inner">
+                <div class="upload-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="40" height="40" fill="none"
+                    stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 16V4M12 4l-4 4M12 4l4 4" />
+                    <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                  </svg>
+                </div>
+                <p class="dropzone-title">
+                  Drag &amp; drop your Excel file
+                </p>
+                <p class="dropzone-hint">
+                  or <span class="link-like">browse</span> — .xlsx / .xls, up to 15&nbsp;MB
+                </p>
+                <p id="file-name" class="file-name" hidden></p>
+              </div>
+            </label>
+
+            <button id="analyze-btn" type="submit" class="btn-primary" disabled>
+              <span class="btn-label">Generate Success Plan</span>
+              <span class="spinner" hidden></span>
+            </button>
+          </form>
+
+          <div id="error-box" class="error-box" hidden></div>
+
+          <ul class="reassurance">
+            <li>Reads all worksheet tabs</li>
+            <li>Detects ✓ / TRUE / Yes as ticked</li>
+            <li>Built on CS best practices</li>
+          </ul>
+        </section>
+      </main>
+
+      <!-- Results view -->
+      <main id="results-view" class="view" hidden></main>
+
+      <footer class="site-footer">
+        <span>Processed locally in your session · No data is stored.</span>
+      </footer>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
