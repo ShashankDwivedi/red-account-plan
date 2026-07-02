@@ -342,6 +342,70 @@ function fillChaosTab(
   }
 }
 
+/**
+ * Read whatever values are already in Column 2 of the Chaos-Data-Questionnaire
+ * tab for the four numeric metric labels.
+ *
+ * Returns a complete ChaosMetrics object if ALL four labels have a non-negative
+ * numeric value — which means the customer filled them in manually (typical for
+ * on-prem / SMP deployments where the Harness API is not reachable).
+ *
+ * Returns null if any value is missing or non-numeric, signalling that the
+ * server should fall back to fetching live data from the Harness API.
+ */
+export async function readChaosMetricsFromExcel(buffer: Buffer): Promise<ChaosMetrics | null> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+
+  const ws = workbook.worksheets.find(
+    (w) => normalizeTab(w.name) === normalizeTab(CHAOS_TAB)
+  );
+  if (!ws) return null;
+
+  // Labels we are looking for (keyed for fast lookup).
+  const labelToKey = new Map<string, keyof ChaosMetrics>([
+    ['percentage of teams onboarded', 'teamsOnboardedPct'],
+    ['license utilisation percentage', 'licenseUtilizationPct'],
+    ['avg monthly experiment runs', 'avgMonthlyExperimentRuns'],
+    ['total number of experiment executions', 'totalExperimentRuns'],
+  ]);
+
+  const found: Partial<Record<keyof ChaosMetrics, number>> = {};
+
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    let labelCol = -1;
+    let metricKey: keyof ChaosMetrics | undefined;
+
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      const text = cellText(cell.value).toLowerCase().replace(/\s+/g, ' ').trim();
+      if (labelToKey.has(text) && labelCol === -1) {
+        labelCol = colNumber;
+        metricKey = labelToKey.get(text);
+      }
+    });
+
+    if (labelCol !== -1 && metricKey) {
+      const valueCell = row.getCell(labelCol + 1);
+      const raw = valueCell.value;
+      const num = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
+      if (!isNaN(num) && num >= 0) {
+        found[metricKey] = num;
+      }
+    }
+  });
+
+  if (
+    found.teamsOnboardedPct !== undefined &&
+    found.licenseUtilizationPct !== undefined &&
+    found.avgMonthlyExperimentRuns !== undefined &&
+    found.totalExperimentRuns !== undefined
+  ) {
+    return found as ChaosMetrics;
+  }
+
+  return null;
+}
+
 /** The four chaos fields in a stable order, with their threshold keys. */
 const CHAOS_ROWS: { key: keyof ChaosMetrics; label: string }[] = [
   { key: 'teamsOnboardedPct', label: CHAOS_FIELD_LABELS.teamsOnboardedPct },

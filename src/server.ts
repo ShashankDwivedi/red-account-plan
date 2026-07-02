@@ -5,6 +5,7 @@ import {
   parseWorkbook,
   fillWorkbook,
   extractAccountDetails,
+  readChaosMetricsFromExcel,
   buildAnalysis,
   fetchChaosMetrics,
   ChaosMetrics,
@@ -68,22 +69,32 @@ app.post(
         return res.status(400).json({ error: 'No file uploaded.' });
       }
 
-      // Fetch the four chaos metrics from Harness and inject them into the
-      // Chaos-Data-Questionnaire tab. If Harness is unreachable, continue
-      // analyzing the questionnaire tabs without the chaos data.
       let metrics: ChaosMetrics | undefined;
       const warnings: string[] = [];
-      try {
-        metrics = await fetchChaosMetrics();
-      } catch (e) {
-        const reason = e instanceof Error ? e.message : String(e);
-        console.warn('Chaos metrics fetch failed:', reason);
-        warnings.push(
-          'Live chaos data could not be fetched, so the Chaos-Data-Questionnaire ' +
-            'values were left blank and its fields are scored as gaps. Set ' +
-            'HARNESS_API_KEY, HARNESS_BASE_URL and HARNESS_ACCOUNT_ID in the ' +
-            'environment to enable them.'
-        );
+
+      // Check if the customer has manually filled all four chaos metric values
+      // in the Chaos-Data-Questionnaire tab (typical for on-prem / SMP customers
+      // who cannot expose the Harness API externally). If so, use those values
+      // directly and skip the API call entirely.
+      const excelMetrics = await readChaosMetricsFromExcel(req.file.buffer);
+      if (excelMetrics) {
+        metrics = excelMetrics;
+        console.log('Chaos metrics read from Excel (on-prem/manual entry) — Harness API skipped.');
+      } else {
+        // Cloud customer or incomplete manual data: fetch live from Harness API.
+        try {
+          metrics = await fetchChaosMetrics();
+        } catch (e) {
+          const reason = e instanceof Error ? e.message : String(e);
+          console.warn('Chaos metrics fetch failed:', reason);
+          warnings.push(
+            'Live chaos data could not be fetched, so the Chaos-Data-Questionnaire ' +
+              'values were left blank and its fields are scored as gaps. Set ' +
+              'HARNESS_API_KEY, HARNESS_BASE_URL and HARNESS_ACCOUNT_ID in the ' +
+              'environment to enable them, or enter the values manually in the ' +
+              'Chaos-Data-Questionnaire tab before uploading.'
+          );
+        }
       }
 
       const items = await parseWorkbook(req.file.buffer, metrics);

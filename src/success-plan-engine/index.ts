@@ -12,6 +12,7 @@ export {
   parseWorkbook,
   fillWorkbook,
   extractAccountDetails,
+  readChaosMetricsFromExcel,
   CHAOS_TAB,
   HARNESS_TAB,
   ACCOUNT_TAB,
