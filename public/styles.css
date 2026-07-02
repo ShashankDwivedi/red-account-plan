@@ -30,6 +30,9 @@
   --green: #16a34a;
   --green-soft: #f0fdf4;
 
+  /* Blue accent (pattern tags, bullets) */
+  --blue: #2563eb;
+
   /* Priority */
   --crit: #dc2626;
   --high: #d97706;
@@ -399,7 +402,19 @@ body {
 .status-Yellow { color: var(--amber); background: var(--amber-soft); }
 .status-Green { color: var(--green); background: var(--green-soft); }
 
-.exec-summary { color: var(--ink-soft); font-size: 14.5px; line-height: 1.65; }
+/* Executive summary as bullet points */
+.exec-bullets {
+  list-style: none; margin: 4px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.exec-bullets li {
+  font-size: 13.5px; color: var(--ink-soft); line-height: 1.55;
+  padding-left: 18px; position: relative;
+}
+.exec-bullets li::before {
+  content: '▸'; position: absolute; left: 0;
+  color: var(--blue); font-size: 11px; top: 3px;
+}
 
 .stat-row { display: flex; gap: 22px; margin-top: 16px; flex-wrap: wrap; }
 .stat { font-size: 13px; color: var(--ink-muted); }
@@ -430,8 +445,8 @@ body {
 .strength-item .icon { color: var(--green); }
 .chip-list .icon { flex-shrink: 0; font-weight: 800; }
 
-/* 30-60-90 timeline */
-.timeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+/* 30-60-90 timeline — 3 equal columns, cards start-aligned */
+.timeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 900px){ .timeline { grid-template-columns: 1fr; } }
 .phase {
   background: var(--surface); border: 1px solid var(--border);
@@ -449,18 +464,34 @@ body {
 .phase-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 16px; }
 .phase-objective { font-size: 13px; color: var(--ink-soft); line-height: 1.55; font-style: italic; }
 
-.action { border-top: 1px solid var(--border); padding-top: 14px; }
-.action:first-of-type { border-top: none; padding-top: 0; }
-.action-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.action-title { font-size: 13.8px; font-weight: 700; color: var(--ink); }
-.prio { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+/* Compact numbered action list */
+.action-list {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.action-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  border-top: 1px solid var(--border); padding-top: 10px;
+}
+.action-item:first-child { border-top: none; padding-top: 0; }
+.action-item.action-pattern { border-left: 3px solid var(--blue); padding-left: 8px; }
+.action-item-num {
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; color: var(--ink-soft); margin-top: 1px;
+}
+.action-item-body { flex: 1; min-width: 0; }
+.action-head { display: flex; align-items: flex-start; gap: 6px; justify-content: space-between; flex-wrap: wrap; }
+.action-title { font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.35; }
+.prio { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; flex-shrink: 0; }
 .prio-Critical { background: var(--red-soft); color: var(--crit); }
 .prio-High { background: var(--amber-soft); color: var(--high); }
 .prio-Medium { background: #ecfeff; color: var(--med); }
-.action-detail { font-size: 12.8px; color: var(--ink-soft); line-height: 1.55; margin-top: 6px; }
-.action-owner { font-size: 11.5px; color: var(--ink-muted); margin-top: 7px; display: inline-flex; align-items: center; gap: 6px; }
+.action-detail { font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin-top: 4px; }
+.action-owner { font-size: 11px; color: var(--ink-muted); margin-top: 5px; display: inline-flex; align-items: center; gap: 5px; }
 .action-owner b { color: var(--ink-soft); font-weight: 600; }
-.action-addresses { font-size: 11.5px; color: var(--ink-muted); margin-top: 6px; line-height: 1.45; }
+.action-addresses { font-size: 11px; color: var(--ink-muted); margin-top: 5px; line-height: 1.4; }
 .action-addresses b { color: var(--ink-soft); }
 
 .phase-foot { margin-top: auto; padding: 16px 20px; background: var(--surface-2); border-top: 1px solid var(--border); }

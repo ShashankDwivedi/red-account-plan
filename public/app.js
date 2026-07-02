@@ -371,31 +371,39 @@
 
     const phasesHtml = data.plan
       .map(function (p) {
-        const actions = p.actions
-          .map(function (a) {
-            // Render multi-paragraph detail (pattern plays use \n\n as separator).
-            var detailHtml = esc(a.detail)
-              .replace(/\n\n/g, '</p><p class="action-detail">')
-              .replace(/\n/g, '<br>');
+        // Top 3 actions only — highest priority first (Critical > High > Medium).
+        var priorityOrder = { Critical: 0, High: 1, Medium: 2 };
+        var topActions = p.actions
+          .slice()
+          .sort(function(a, b) { return priorityOrder[a.priority] - priorityOrder[b.priority]; })
+          .slice(0, 3);
 
-            // Show a pattern tag if this action is driven by a detected pattern.
+        const actions = topActions
+          .map(function (a, idx) {
+            // Extract the first meaningful sentence from the detail as the one-liner.
+            // Strip the "Correlated risks addressed..." suffix before extracting.
+            var cleanDetail = a.detail.split('\n\n')[0].trim();
+            // Take the first sentence (up to the first ". " or full stop before capital).
+            var firstSentence = cleanDetail.match(/^[^.!?]+[.!?]/)?.[0] || cleanDetail.slice(0, 120);
+            if (firstSentence.length > 120) firstSentence = firstSentence.slice(0, 117) + '…';
+
             var patternTag = a.patternName
               ? '<span class="action-pattern-tag">' + esc(a.patternName) + '</span>'
               : '';
 
             return (
-              '<div class="action' + (a.patternId ? ' action-pattern' : '') + '">' +
+              '<li class="action-item' + (a.patternId ? ' action-pattern' : '') + '">' +
+              '<div class="action-item-num">' + (idx + 1) + '</div>' +
+              '<div class="action-item-body">' +
               '<div class="action-head">' +
               '<span class="action-title">' + esc(a.title) + '</span>' +
               '<span class="prio prio-' + esc(a.priority) + '">' + esc(a.priority) + '</span>' +
               '</div>' +
               (patternTag ? '<div class="action-pattern-row">' + patternTag + '</div>' : '') +
-              '<p class="action-detail">' + detailHtml + '</p>' +
+              '<p class="action-detail">' + esc(firstSentence) + '</p>' +
               '<p class="action-owner">👤 <b>' + esc(a.owner) + '</b></p>' +
-              (a.addresses
-                ? '<p class="action-addresses"><b>Addresses:</b> ' + esc(a.addresses) + '</p>'
-                : '') +
-              '</div>'
+              '</div>' +
+              '</li>'
             );
           })
           .join('');
@@ -416,11 +424,10 @@
           '</div>' +
           '<div class="phase-body">' +
           '<p class="phase-objective">' + esc(p.objective) + '</p>' +
-          actions +
+          '<ol class="action-list">' + actions + '</ol>' +
           '</div>' +
           '<div class="phase-foot">' +
-          '<div class="foot-block"><div class="foot-title">Success Metrics</div><ul class="foot-list">' + metrics + '</ul></div>' +
-          '<div class="foot-block"><div class="foot-title">Exit Criteria</div><ul class="foot-list">' + exits + '</ul></div>' +
+          '<div class="foot-block"><div class="foot-title">Key Metrics</div><ul class="foot-list">' + metrics + '</ul></div>' +
           '</div>' +
           '</div>'
         );
@@ -463,8 +470,14 @@
       '<div class="gauge-inner"><div class="gauge-score" style="color:' + ragColor(o.status) + '">' +
       o.score + '</div><div class="gauge-label">Health Score</div></div></div>' +
       '<div>' +
-      '<span class="status-badge status-' + esc(o.status) + '">Account Status: ' + esc(o.status) + '</span>' +
-      '<p class="exec-summary">' + esc(data.executiveSummary) + '</p>' +
+      '<span class="status-badge status-' + esc(o.status) + '">' +
+        (o.status === 'Red' ? 'Why Account is Red' : o.status === 'Yellow' ? 'Why Account is Yellow' : 'Account is Healthy') +
+      '</span>' +
+      '<ul class="exec-bullets">' +
+        data.executiveSummary.split('\n').map(function(line) {
+          return line.trim() ? '<li>' + esc(line.trim()) + '</li>' : '';
+        }).join('') +
+      '</ul>' +
       '<div class="stat-row">' +
       '<span class="stat"><b>' + o.total + '</b>Criteria assessed</span>' +
       '<span class="stat"><b style="color:var(--green)">' + o.yes + '</b>Yes / met</span>' +

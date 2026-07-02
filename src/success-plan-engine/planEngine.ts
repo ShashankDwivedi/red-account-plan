@@ -1000,6 +1000,13 @@ function exitFor(horizon: 30 | 60 | 90, status: HealthStatus): string[] {
  * renewal date, product) are woven in so the summary reads as specific
  * to THIS customer, not a generic template.
  */
+/**
+ * Returns a newline-separated list of crisp, consultant-quality bullet points.
+ * Account details (name, ARR, region, renewal) are deliberately omitted here —
+ * they are already displayed in the Account Details card above this section.
+ * The summary focuses purely on the "why": health signal, risk count, patterns,
+ * compounding dynamics, and what the plan will do about it.
+ */
 function buildExecutiveSummary(
   status: HealthStatus,
   score: number,
@@ -1009,69 +1016,78 @@ function buildExecutiveSummary(
   accountDetails?: AnalysisResult['accountDetails']
 ): string {
   const get = (label: string) => accountDetails?.find((d) => d.label === label)?.value;
-  const accountName = get('Account Name');
-  const arr = get('ARR');
   const renewal = get('Renewal Date');
-  const product = get('Product Purchased');
-  const region = get('Region');
 
-  const subject = accountName
-    ? `${accountName}${product ? ` (${product})` : ''}${region ? `, ${region}` : ''}${arr ? `, $${arr} ARR` : ''}`
-    : 'This account';
+  const bullets: string[] = [];
 
-  const statusLine =
+  // Line 1 — health signal
+  const statusVerb =
     status === 'Red'
-      ? `${subject} is currently RED (health score ${score}/100) and requires immediate, senior-led intervention to avoid churn.`
+      ? `Health score is ${score}/100 — account is RED and requires immediate, senior-led intervention to prevent churn`
       : status === 'Yellow'
-      ? `${subject} is currently YELLOW (health score ${score}/100) — recoverable, but at risk without a focused, time-bound plan.`
-      : `${subject} is currently GREEN (health score ${score}/100).`;
+      ? `Health score is ${score}/100 — account is YELLOW and at risk without a focused, time-bound recovery plan`
+      : `Health score is ${score}/100 — account is GREEN`;
+  bullets.push(statusVerb);
 
-  const renewalLine = renewal ? ` Renewal is due ${renewal}.` : '';
-
-  if (patterns.length === 0) {
-    const riskList =
-      topRisks.length > 0
-        ? topRisks.slice(0, 3).map((r) => `"${r.question}"`).join(', ')
-        : 'no material gaps';
-    const strengthList =
-      strengths.length > 0
-        ? strengths.slice(0, 2).map((s) => `"${s.question}"`).join(', ')
-        : 'a solid foundation';
-    return `${statusLine}${renewalLine} The most pressing risks are ${riskList}. We will leverage existing strengths (${strengthList}) as anchors for recovery. This 30-60-90 plan: stabilize and re-align in days 0-30, build demonstrable momentum by day 60, prove durable value and secure the relationship by day 90.`;
+  // Line 2 — renewal urgency (only if not already obvious from Account Details)
+  if (renewal && status !== 'Green') {
+    bullets.push(`Renewal is due ${renewal} — the window to demonstrate value and secure commitment is time-limited`);
   }
 
+  // Line 3 — risk count
+  const tabCount = [...new Set(topRisks.map((r) => r.tab))].length;
+  if (topRisks.length > 0) {
+    bullets.push(
+      `${topRisks.length} risks identified across ${tabCount} assessment area${tabCount > 1 ? 's' : ''}; ` +
+      `${strengths.length} strengths confirmed that can anchor the recovery`
+    );
+  }
+
+  if (patterns.length === 0) {
+    // No patterns — name the top risks directly
+    if (topRisks.length > 0) {
+      bullets.push(`Key gaps: ${topRisks.slice(0, 3).map((r) => r.question).join('; ')}`);
+    }
+    bullets.push('This 30-60-90 plan: stabilize & re-align (day 30) → build early wins (day 60) → prove value & secure renewal (day 90)');
+    return bullets.join('\n');
+  }
+
+  // Line 4 — pattern summary
   const criticals = patterns.filter((p) => p.def.severity === 'Critical');
   const highs = patterns.filter((p) => p.def.severity === 'High');
 
-  const patternLines = patterns
-    .slice(0, 4)
-    .map((p) => `[${p.def.severity}] ${p.def.name}: ${p.def.description}`);
+  const patternSummary = [
+    criticals.length > 0
+      ? `${criticals.length} Critical: ${criticals.map((p) => p.def.name).join(', ')}`
+      : '',
+    highs.length > 0
+      ? `${highs.length} High: ${highs.map((p) => p.def.name).join(', ')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  bullets.push(`${patterns.length} correlated risk pattern${patterns.length > 1 ? 's' : ''} detected — ${patternSummary}`);
 
-  let compoundingNote = '';
+  // Line 5 — compounding note (only when ≥2 Criticals)
   if (criticals.length >= 2) {
-    compoundingNote =
-      ` These ${criticals.length} Critical patterns are compounding each other: without executive alignment, deployment blockers cannot be escalated; without deployment, no value can be demonstrated; without a value story, the renewal is at risk.`;
+    bullets.push(
+      `These patterns are compounding: without executive alignment, deployment blockers cannot be escalated; ` +
+      `without deployment, no value can be demonstrated; without a value story, the renewal fails`
+    );
   } else if (criticals.length === 1 && highs.length >= 1) {
-    compoundingNote =
-      ` The Critical pattern is amplifying the High-severity issues — resolving ${criticals[0].def.name} first unlocks progress across all other areas.`;
+    bullets.push(
+      `"${criticals[0].def.name}" is the root blocker — resolving it first unlocks progress on all High-severity patterns`
+    );
   }
 
-  const urgencyLine =
-    renewal && status === 'Red'
-      ? ` With renewal due ${renewal} and ${topRisks.length} unresolved risks, the window to recover this account is time-limited.`
-      : renewalLine;
-
+  // Line 6 — plan sequence
   const planSeq =
     status === 'Red'
-      ? `This 30-60-90 plan sequences the recovery: re-establish executive trust and unblock deployment in days 0-30; deliver the first measurable chaos experiments and enablement wins by day 60; and build the evidence-based renewal business case by day 90.`
-      : `This 30-60-90 plan builds on existing strengths to systematically close the identified patterns and deliver a strong renewal narrative.`;
+      ? 'Plan: unblock deployment & restore exec trust (day 30) → first chaos experiment & enablement wins (day 60) → ROI report & renewal business case (day 90)'
+      : 'Plan: address critical gaps (day 30) → build momentum (day 60) → institutionalise value & secure renewal (day 90)';
+  bullets.push(planSeq);
 
-  return (
-    `${statusLine}${urgencyLine} ` +
-    `${topRisks.length} risks were identified across ${[...new Set(topRisks.map((r) => r.tab))].length} assessment areas. ` +
-    `Pattern analysis reveals ${patterns.length} correlated risk cluster${patterns.length > 1 ? 's' : ''}: ${patternLines.join('. ')}.` +
-    `${compoundingNote} ${planSeq}`
-  );
+  return bullets.join('\n');
 }
 
 // ---------------------------------------------------------------------------
