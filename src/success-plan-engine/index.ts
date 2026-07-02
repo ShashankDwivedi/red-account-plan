@@ -8,7 +8,14 @@
  *  - polarity:    classifies risk-flag questions where ticked = negative.
  *  - planEngine:  scores health and builds the dynamic 30-60-90 plan.
  */
-export { parseWorkbook, fillWorkbook, CHAOS_TAB, HARNESS_TAB } from './excelParser';
+export {
+  parseWorkbook,
+  fillWorkbook,
+  extractAccountDetails,
+  CHAOS_TAB,
+  HARNESS_TAB,
+  ACCOUNT_TAB,
+} from './excelParser';
 export { buildAnalysis } from './planEngine';
 export { isNegativeQuestion, toIsRisk } from './polarity';
 export { fetchChaosMetrics } from './chaosData';

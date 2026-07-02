@@ -43,14 +43,37 @@ export interface TabSummary {
 /** RAG (Red / Amber-Yellow / Green) health status. */
 export type HealthStatus = 'Red' | 'Yellow' | 'Green';
 
+/**
+ * A correlated risk pattern identified by the CS consultant engine.
+ * Represents a cluster of related risks that share a common root cause
+ * and require a coordinated intervention rather than item-by-item fixes.
+ */
+export interface RiskPattern {
+  id: string;
+  name: string;
+  severity: 'Critical' | 'High' | 'Medium';
+  /** One-line CS consultant headline diagnosis. */
+  description: string;
+  /** The underlying root cause that connects all matched risks. */
+  rootCause: string;
+  /** Commercial or strategic consequence if left unaddressed. */
+  implication: string;
+  /** The specific risk questions from the assessment that triggered this pattern. */
+  matchedRisks: string[];
+}
+
 /** A single actionable play in the plan. */
 export interface PlanAction {
   title: string;
   detail: string;
   owner: string;
-  /** Which weakness this action addresses. */
+  /** Which weakness / risk questions this action addresses. */
   addresses?: string;
   priority: 'Critical' | 'High' | 'Medium';
+  /** ID of the correlated risk pattern this action belongs to (if any). */
+  patternId?: string;
+  /** Human-readable pattern name for display. */
+  patternName?: string;
 }
 
 /** One horizon (30 / 60 / 90) of the success plan. */
@@ -92,4 +115,12 @@ export interface AnalysisResult {
     avgMonthlyExperimentRuns: number;
     totalExperimentRuns: number;
   };
+  /** Label/value pairs from the Account Details tab (top-of-report context). */
+  accountDetails?: { label: string; value: string }[];
+  /**
+   * Correlated risk patterns detected by the CS consultant engine.
+   * Each pattern represents a cluster of related risks sharing a root cause,
+   * surfaced to guide the account team toward systemic rather than piecemeal fixes.
+   */
+  riskPatterns?: RiskPattern[];
 }

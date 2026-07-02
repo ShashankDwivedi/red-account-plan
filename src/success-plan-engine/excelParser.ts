@@ -6,6 +6,7 @@ import { ChaosMetrics, CHAOS_FIELD_LABELS } from './chaosData';
 /** Tabs that drive the success plan. Analysis is scoped to these only. */
 export const CHAOS_TAB = 'Chaos-Data-Questionnaire';
 export const HARNESS_TAB = 'Harness-Questionnaire';
+export const ACCOUNT_TAB = 'Account_Details';
 const ANALYZED_TABS = new Set([HARNESS_TAB.toLowerCase(), CHAOS_TAB.toLowerCase()]);
 
 /**
@@ -443,6 +444,61 @@ export async function parseWorkbook(
   items = items.concat(chaosAssessments(metrics));
 
   return items;
+}
+
+/** A single label/value pair from the Account Details tab. */
+export interface AccountDetail {
+  label: string;
+  value: string;
+}
+
+/** Format a raw Account-Details cell value for display. */
+function formatDetailValue(value: ExcelJS.CellValue): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') {
+    // Show large numbers with thousands separators (e.g. ARR).
+    return value.toLocaleString('en-US');
+  }
+  if (value instanceof Date) {
+    return value.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  }
+  return cellText(value);
+}
+
+/**
+ * Read the Account Details tab as an ordered list of label/value pairs.
+ * Returns an empty array when the tab is absent.
+ */
+export async function extractAccountDetails(
+  buffer: Buffer
+): Promise<AccountDetail[]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+
+  const ws = workbook.worksheets.find(
+    (w) => normalizeTab(w.name) === normalizeTab(ACCOUNT_TAB)
+  );
+  if (!ws) return [];
+
+  const details: AccountDetail[] = [];
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    const cells: { col: number; value: ExcelJS.CellValue }[] = [];
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      cells.push({ col: colNumber, value: cell.value });
+    });
+    if (cells.length < 2) return;
+    const label = cellText(cells[0].value);
+    const value = formatDetailValue(cells[1].value);
+    // Skip an obvious header row like "Field | Value".
+    const lower = label.toLowerCase();
+    if (lower === 'field' || lower === 'label' || lower === 'attribute') return;
+    if (label) details.push({ label, value });
+  });
+  return details;
 }
 
 /**

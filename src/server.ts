@@ -4,6 +4,7 @@ import path from 'path';
 import {
   parseWorkbook,
   fillWorkbook,
+  extractAccountDetails,
   buildAnalysis,
   fetchChaosMetrics,
   ChaosMetrics,
@@ -86,6 +87,7 @@ app.post(
       }
 
       const items = await parseWorkbook(req.file.buffer, metrics);
+      const accountDetails = await extractAccountDetails(req.file.buffer);
 
       if (items.length === 0) {
         return res.status(422).json({
@@ -99,7 +101,8 @@ app.post(
         req.file.originalname,
         items,
         warnings,
-        metrics
+        metrics,
+        accountDetails
       );
       res.json(analysis);
     } catch (e) {

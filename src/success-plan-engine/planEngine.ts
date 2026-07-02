@@ -1,6 +1,7 @@
 import {
   Assessment,
   AnalysisResult,
+  RiskPattern,
   TabSummary,
   HealthStatus,
   PlanPhase,
@@ -182,6 +183,239 @@ function classify(question: string): Pillar {
     }
   });
   return best;
+}
+
+// ---------------------------------------------------------------------------
+// Pattern detection – correlate individual risks into root-cause clusters.
+//
+// A "pattern" is a set of 2+ related risks that share a common underlying
+// driver.  Rather than fixing each checkbox in isolation, the CS plan leads
+// with a coordinated intervention that addresses the root cause.  This is the
+// difference between a checklist and a consultant's diagnosis.
+// ---------------------------------------------------------------------------
+
+interface PatternPlay {
+  title: string;
+  detail: string;
+  owner: string;
+}
+
+interface PatternDef {
+  id: string;
+  name: string;
+  severity: PlanAction['priority'];
+  description: string;
+  minMatches: number;
+  testRisk: (question: string) => boolean;
+  rootCause: string;
+  implication: string;
+  plays: Record<30 | 60 | 90, PatternPlay>;
+}
+
+interface DetectedPattern {
+  def: PatternDef;
+  /** The exact risk question strings that triggered this pattern. */
+  matchedRisks: string[];
+}
+
+const PATTERN_DEFS: PatternDef[] = [
+  // ── Pattern 1: Leadership Vacuum ──────────────────────────────────────────
+  {
+    id: 'leadership_vacuum',
+    name: 'Leadership Vacuum',
+    severity: 'Critical',
+    minMatches: 2,
+    testRisk: (q) =>
+      /sponsor|champion|re-?org|org chart|executive|leadership change|decision maker|account executive.*connect/i.test(
+        q
+      ),
+    description:
+      'Executive alignment has broken down — the account lacks a stable internal sponsor and champion.',
+    rootCause:
+      'Organisational change (re-org, staff departure) severed the executive relationship without a proactive re-engagement plan from the vendor team.',
+    implication:
+      'Without an internal sponsor there is no one to champion the renewal, unblock deployment, or drive adoption. This is the #1 predictor of churn for B2B SaaS.',
+    plays: {
+      30: {
+        title: 'Re-establish executive alignment',
+        detail:
+          'Map the new org structure after the re-org. Identify a candidate sponsor and champion in the reorganised leadership team within the first week. ' +
+          'Secure a 30-minute executive alignment meeting within 10 days — present a candid state-of-the-account assessment and co-create a signed recovery commitment. ' +
+          'Document every stakeholder with their influence level, attitude toward the product, and preferred communication style. ' +
+          'Ensure the AE has a direct, warm line to the executive sponsor — not just the operational champion.',
+        owner: 'CSM + Account Executive',
+      },
+      60: {
+        title: 'Stand up a formal governance cadence',
+        detail:
+          'Establish a bi-weekly champion working session and a monthly executive sponsor review. ' +
+          'Use the first champion session to review progress against the signed recovery commitment from day 30. ' +
+          'Multi-thread into at least 2 additional contacts (e.g. Head of DevOps, VP Engineering) to eliminate single-point-of-failure risk from future staff turnover.',
+        owner: 'CSM',
+      },
+      90: {
+        title: 'Run a recovery-focused Executive Business Review',
+        detail:
+          'Deliver an EBR that quantifies recovery progress against every risk identified in this plan, demonstrates value delivered during the 90-day period, and presents the renewal narrative. ' +
+          'Secure explicit renewal intent from the sponsor before the EBR closes. ' +
+          'Use the EBR to formalise the multi-threaded stakeholder map going forward and identify the next strategic goal.',
+        owner: 'CSM + Account Executive',
+      },
+    },
+  },
+
+  // ── Pattern 2: Environment & Deployment Blockers ──────────────────────────
+  {
+    id: 'deployment_blocker',
+    name: 'Environment & Deployment Blockers',
+    severity: 'Critical',
+    minMatches: 2,
+    testRisk: (q) =>
+      /install|infosec|technical constraint|resource constraint|environment|deploy|security constraint|compliance/i.test(
+        q
+      ),
+    description:
+      'The product cannot be fully used due to unresolved environment, security, and resource constraints.',
+    rootCause:
+      'Post-sale deployment support was insufficient. Infosec, technical, and resource barriers were not jointly owned with a tracked resolution plan from the outset.',
+    implication:
+      'Zero value realization is possible while deployment is blocked. The customer has no justification for renewing software they cannot run — this must be unblocked before any adoption or value conversation.',
+    plays: {
+      30: {
+        title: 'Launch a deployment unblocking war room',
+        detail:
+          'Convene a joint task force (CSM + Solutions Engineer + Product/Support) with the customer\'s DevOps and Security teams within 5 days of this plan. ' +
+          'Document every blocker (Infosec approval, technical gap, resource constraint) with: a specific vendor owner, a specific customer owner, resolution criteria, and a target date. ' +
+          'Treat each blocker as a P1 issue with weekly status emails to the executive sponsor. ' +
+          'For SMP (self-managed) deployments: ensure the support team has approved remote or screen-share access to diagnose environment-specific issues without waiting for tickets.',
+        owner: 'CSM + Solutions Engineer + Support Lead',
+      },
+      60: {
+        title: 'Achieve first fully operational deployment',
+        detail:
+          'Drive every blocker to resolution or an agreed workaround. Validate the product is fully operational in the customer\'s target environment by running a joint smoke test. ' +
+          'Document each resolved blocker as a concrete proof point for the renewal conversation. ' +
+          'If resource constraints were the blocker (no internal staff time), agree a formal staffing plan with the customer\'s manager and fund it with the saved renewal at risk. ' +
+          'Confirm there are no hidden secondary blockers before declaring deployment complete.',
+        owner: 'CSM + Solutions Engineer',
+      },
+      90: {
+        title: 'Institutionalise the deployment and operations runbook',
+        detail:
+          'Codify the deployment architecture, security approval process, and resource requirements into a customer-owned runbook so future environment changes (upgrades, new clusters, DR environments) do not reintroduce blockers. ' +
+          'Hand ownership of the runbook to the internal champion. ' +
+          'Add deployment health (version currency, connectivity, infosec compliance status) as a standing agenda item on the monthly governance cadence.',
+        owner: 'Solutions Engineer + CSM',
+      },
+    },
+  },
+
+  // ── Pattern 3: Chaos Engineering Not Operationalized ─────────────────────
+  {
+    id: 'chaos_not_operationalized',
+    name: 'Chaos Engineering Not Operationalized',
+    severity: 'High',
+    minMatches: 2,
+    testRisk: (q) =>
+      /probe template|experiment template|pipeline|apm tool|load test|chaos integrat/i.test(q),
+    description:
+      'Chaos experiments are not embedded in CI/CD pipelines — the product risks being perceived as shelfware.',
+    rootCause:
+      'The customer moved past initial installation without completing the operationalization checklist: APM instrumentation, probe/experiment template creation, and pipeline integration were skipped or deferred.',
+    implication:
+      'Without pipeline-integrated, repeatable experiments the customer cannot measure resilience improvements. The renewal ROI case cannot be built without measurable outcomes — every week this remains blocked, the renewal risk increases.',
+    plays: {
+      30: {
+        title: 'Audit operationalization gaps and select the pilot service',
+        detail:
+          'Conduct a structured audit with the customer\'s chaos champion: Is APM instrumented and generating observable steady-state signals? Are any probe templates created? Are any experiment templates in place? Is chaos triggering from any pipeline stage? ' +
+          'Produce a prioritized gap list (what\'s missing and why). ' +
+          'Identify ONE high-value, high-traffic service as the pilot for the first pipeline-integrated experiment — choose for impact, not for ease. ' +
+          'Document the steady-state hypothesis for the pilot service (what defines "healthy" before an experiment runs).',
+        owner: 'CSM + Solutions Engineer',
+      },
+      60: {
+        title: 'Ship the first pipeline-integrated chaos experiment',
+        detail:
+          'Co-create probe templates and at least one experiment template for the pilot service. ' +
+          'Integrate the experiment into the CI/CD pipeline (pre-production stage) so it runs on every deployment build. ' +
+          'Instrument APM to provide evidence-based steady-state measurements — this is the foundation for all future ROI claims. ' +
+          'Validate with the customer\'s team that they can run the experiment, read the results, and take action without vendor hand-holding. ' +
+          'This reference implementation is the template all subsequent experiments follow.',
+        owner: 'CSM + Solutions Engineer + Customer Chaos Champion',
+      },
+      90: {
+        title: 'Scale to a Chaos Centre of Excellence (CCoE)',
+        detail:
+          'Replicate the reference implementation across 3–5 services (targeting the highest business-criticality ones). ' +
+          'Integrate load testing alongside chaos experiments in at least one pipeline (the reference service). ' +
+          'Draft and hand over a Chaos Engineering Playbook the customer\'s team owns independently, covering: when to run experiments, how to interpret results, how to file hypothesis templates, and how to escalate detected weaknesses. ' +
+          'Track and report: monthly experiment run rate, teams onboarded, services covered, and incidents caught by experiments — these become the renewal business case metrics.',
+        owner: 'Customer Chaos Champion + CSM',
+      },
+    },
+  },
+
+  // ── Pattern 4: Value Realization Gap ─────────────────────────────────────
+  {
+    id: 'value_realization_gap',
+    name: 'Value Realization Gap',
+    severity: 'High',
+    minMatches: 1,
+    testRisk: (q) =>
+      /training gap|avg monthly|total number|license utilisation|license utilization|teams onboarded/i.test(
+        q
+      ),
+    description:
+      'Experiment run rates are critically below the healthy threshold — the customer has not derived measurable business value from their investment.',
+    rootCause:
+      'Enablement was never fully completed after initial setup. Teams lack the skills and confidence to design and run experiments independently, resulting in critically low run rates and under-utilized licenses.',
+    implication:
+      'Without a value story — reduced incidents, improved MTTR, quantified resilience improvements — the procurement team has no evidence to approve the renewal. This is a direct commercial risk.',
+    plays: {
+      30: {
+        title: 'Baseline the value gap and co-define success metrics',
+        detail:
+          'Conduct a value-mapping session with the champion: What were the customer\'s stated outcomes when they purchased the product? What metrics would make a compelling renewal story? ' +
+          'Capture current-state baseline: experiment run rate (monthly), teams actively running experiments, services covered, MTTR, incident count. ' +
+          'Identify the 3 teams with the highest potential to be quick wins — teams that are closest to running experiments but blocked by a training or tooling gap. ' +
+          'Agree on the success metrics that will be tracked weekly and reported at each governance cadence.',
+        owner: 'CSM',
+      },
+      60: {
+        title: 'Run a structured enablement programme',
+        detail:
+          'Deliver hands-on, role-based training sessions for the 3 identified teams. Use the probe and experiment templates created in the operationalization track (chaos_not_operationalized) rather than starting from scratch. ' +
+          'Set a sprint-based target: at least one experiment per team per two-week sprint. ' +
+          'Measure and report the experiment run rate weekly — make the number visible to the team as a shared goal. ' +
+          'Celebrate and socialise each team\'s first successful experiment run internally (Slack, newsletter, all-hands) to create internal momentum and peer pressure for remaining teams.',
+        owner: 'CSM + Enablement + Solutions Engineer',
+      },
+      90: {
+        title: 'Produce and present a Value Realization & ROI Report',
+        detail:
+          'Quantify the delta from baseline to current state: ' +
+          'Δ experiment run rate (monthly), Δ teams onboarded (% of licensed seats), Δ services covered, incidents caught by experiments before they reached production, MTTR improvement. ' +
+          'Package as an executive-ready ROI report with visual charts — use this as the centrepiece of the EBR and the renewal business case. ' +
+          'If a quantified ROI cannot be made yet (too early), use case studies from comparable customers as proxies and project the expected ROI trajectory.',
+        owner: 'CSM',
+      },
+    },
+  },
+];
+
+function detectPatterns(risks: Assessment[]): DetectedPattern[] {
+  const result: DetectedPattern[] = [];
+  for (const def of PATTERN_DEFS) {
+    const matched = risks.filter((r) => def.testRisk(r.question));
+    if (matched.length >= def.minMatches) {
+      result.push({ def, matchedRisks: matched.map((r) => r.question) });
+    }
+  }
+  // Critical before High before Medium — the most urgent work leads each plan phase.
+  const order: Record<PlanAction['priority'], number> = { Critical: 0, High: 1, Medium: 2 };
+  result.sort((a, b) => order[a.def.severity] - order[b.def.severity]);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -491,46 +725,63 @@ function gapsForHorizon(
 function buildPhase(
   horizon: 30 | 60 | 90,
   pillarHealth: PillarHealth[],
-  status: HealthStatus
+  status: HealthStatus,
+  patterns: DetectedPattern[]
 ): PlanPhase {
   const meta = PHASE_META[horizon];
   const actions: PlanAction[] = [];
 
-  // Worst pillars first (lowest score), so Critical work leads each phase.
+  // Track which risk questions are owned by a pattern play so the pillar
+  // fallback does not double-address them.
+  const coveredByPattern = new Set<string>();
+
+  // Step 1: Pattern-driven plays (consultant-grade, correlated, Critical-first).
+  for (const p of patterns) {
+    const play = p.def.plays[horizon];
+    p.matchedRisks.forEach((r) => coveredByPattern.add(r));
+
+    const riskSummary =
+      p.matchedRisks.length <= 3
+        ? p.matchedRisks.join('; ')
+        : `${p.matchedRisks.slice(0, 3).join('; ')} (+${p.matchedRisks.length - 3} more)`;
+
+    actions.push({
+      title: play.title,
+      detail:
+        `${play.detail}\n\n` +
+        `Correlated risks addressed by this pattern (${p.matchedRisks.length}): ${riskSummary}.`,
+      owner: play.owner,
+      priority: p.def.severity,
+      addresses: p.matchedRisks.join('; '),
+      patternId: p.def.id,
+      patternName: p.def.name,
+    });
+  }
+
+  // Step 2: Pillar fallback for any risks NOT covered by a pattern.
   const ordered = [...pillarHealth].sort((a, b) => a.score - b.score);
+  const hasPatterns = patterns.length > 0;
 
   for (const ph of ordered) {
-    const isWeak = ph.no > 0;
+    const uncoveredGaps = ph.gaps.filter((g) => !coveredByPattern.has(g.question));
 
-    if (isWeak) {
+    if (uncoveredGaps.length > 0) {
       const template = PLAYBOOK[ph.pillar].find((p) => p.horizon === horizon);
       if (!template) continue;
 
-      // Priority scales with severity of THIS pillar for THIS account.
       const priority = severityPriority(ph.score);
-
-      // Every gap in this pillar is assigned to a horizon so that ALL risks are
-      // covered across the plan. Cite the specific risks this horizon handles.
-      const horizonGaps = gapsForHorizon(ph.gaps, horizon, ph.score);
+      const horizonGaps = gapsForHorizon(uncoveredGaps, horizon, ph.score);
       const cited = horizonGaps.map((g) => g.question);
-      // If a horizon has no assigned gaps for this pillar, skip its action so we
-      // don't emit an empty play (the gaps are handled in another horizon).
       if (cited.length === 0) continue;
-      const addresses = cited.join('; ');
 
-      // Dynamically enrich the detail with the pillar's severity + specifics.
       const severityNote =
         ph.score < 40
-          ? `This is a critical gap area — ${ph.no} of ${ph.total} checks are unmet.`
+          ? `This is a critical gap area \u2014 ${ph.no} of ${ph.total} checks are unmet.`
           : ph.score < 70
-          ? `A partial gap — ${ph.no} of ${ph.total} checks are unmet.`
-          : `A minor gap — ${ph.no} of ${ph.total} checks are unmet.`;
+          ? `A partial gap \u2014 ${ph.no} of ${ph.total} checks are unmet.`
+          : `A minor gap \u2014 ${ph.no} of ${ph.total} checks are unmet.`;
 
-      const focus =
-        horizon === 30 && cited.length
-          ? ` Start with: ${cited[0]}.`
-          : '';
-
+      const focus = horizon === 30 && cited.length ? ` Start with: ${cited[0]}.` : '';
       const coverage = ` This horizon addresses ${cited.length} identified risk(s) in this area.`;
 
       actions.push({
@@ -538,10 +789,10 @@ function buildPhase(
         detail: `${template.detail} ${severityNote}${focus}${coverage}`,
         owner: template.owner,
         priority,
-        addresses,
+        addresses: cited.join('; '),
       });
-    } else if (ph.total > 0) {
-      // Strong pillar: protect & grow rather than fabricate a problem.
+    } else if (!hasPatterns && ph.total > 0 && ph.no === 0) {
+      // "Protect & grow" only when no patterns are active.
       actions.push({
         title: `Protect & grow: ${PILLAR_LABEL[ph.pillar]}`,
         detail: `${PROTECT_PLAYBOOK[ph.pillar][horizon]} (All ${ph.total} checks in this area are met.)`,
@@ -552,7 +803,7 @@ function buildPhase(
     }
   }
 
-  // Absolute fallback (e.g. no recognizable pillars at all).
+  // Absolute fallback (no pillars in data at all).
   if (actions.length === 0) {
     actions.push({
       title:
@@ -560,7 +811,7 @@ function buildPhase(
           ? 'Sustain momentum and plan the next value chapter'
           : 'Reinforce what is working',
       detail:
-        'The assessment did not surface specific gaps for this horizon. Maintain the current cadence, document what is working, and reinvest freed-up capacity into the customer’s next strategic goal.',
+        "The assessment did not surface specific gaps for this horizon. Maintain the current cadence, document what is working, and reinvest freed-up capacity into the customer's next strategic goal.",
       owner: 'CSM',
       priority: 'Medium',
     });
@@ -570,9 +821,9 @@ function buildPhase(
     horizon,
     label: meta.label,
     targetStatus: dynamicTarget(horizon, status),
-    objective: dynamicObjective(horizon, status, ordered),
+    objective: dynamicObjective(horizon, status, ordered, patterns),
     actions,
-    successMetrics: metricsFor(horizon, ordered),
+    successMetrics: metricsFor(horizon, ordered, patterns),
     exitCriteria: exitFor(horizon, status),
   };
 }
@@ -593,18 +844,19 @@ function dynamicTarget(horizon: 30 | 60 | 90, status: HealthStatus): HealthStatu
 }
 
 /** Objective text that adapts to status and names the weakest areas. */
+/** Objective text — pattern-aware and named by the weakest areas. */
 function dynamicObjective(
   horizon: 30 | 60 | 90,
   status: HealthStatus,
-  ordered: PillarHealth[]
+  ordered: PillarHealth[],
+  patterns: DetectedPattern[]
 ): string {
   const weakest = ordered
     .filter((p) => p.no > 0)
     .slice(0, 2)
     .map((p) => PILLAR_LABEL[p.pillar]);
 
-  // Healthy account: protect-and-grow language, never "stop the bleeding".
-  if (weakest.length === 0) {
+  if (weakest.length === 0 && patterns.length === 0) {
     const greenBase: Record<30 | 60 | 90, string> = {
       30: 'Protect the strong position. Re-confirm the signals that make this account healthy and capture a fresh baseline while everything is green.',
       60: 'Grow from strength. Deepen adoption and value where the account is already succeeding, and open the next strategic conversation.',
@@ -613,8 +865,22 @@ function dynamicObjective(
     return greenBase[horizon];
   }
 
-  // There are real gaps: use recovery language scaled to how bad it is.
   const base = PHASE_META[horizon].objective;
+
+  // If patterns detected, name the patterns as the focus areas — more specific.
+  if (patterns.length > 0) {
+    const criticals = patterns.filter((p) => p.def.severity === 'Critical').map((p) => p.def.name);
+    const highs = patterns.filter((p) => p.def.severity === 'High').map((p) => p.def.name);
+    const named = [...criticals, ...highs].slice(0, 2);
+    const focusArea =
+      horizon === 30
+        ? `Immediate focus: resolve ${named.join(' and ')}.`
+        : horizon === 60
+        ? `Continue pressing on ${named.join(' and ')}.`
+        : `Lock in durable gains — close out ${named.join(' and ')} and secure the renewal.`;
+    return `${base} ${focusArea}`;
+  }
+
   const focusArea =
     horizon === 30
       ? `Immediate focus: ${weakest.join(' and ')}.`
@@ -628,7 +894,11 @@ function dynamicObjective(
  * Success metrics adapt to the pillars that are actually weak, so two different
  * uploads produce different, relevant metrics.
  */
-function metricsFor(horizon: 30 | 60 | 90, ordered: PillarHealth[]): string[] {
+/**
+ * Success metrics — augmented with pattern-specific milestones so the
+ * metrics for a chaos-heavy account differ from a relationship-heavy one.
+ */
+function metricsFor(horizon: 30 | 60 | 90, ordered: PillarHealth[], patterns: DetectedPattern[]): string[] {
   const weak = new Set(ordered.filter((p) => p.no > 0).map((p) => p.pillar));
   const metrics: string[] = [];
 
@@ -655,13 +925,35 @@ function metricsFor(horizon: 30 | 60 | 90, ordered: PillarHealth[]): string[] {
     if (weak.has('Support')) metrics.push('Proactive monitoring and periodic technical review in place');
   }
 
-  // Fallback for strong accounts / horizons with no weak pillar match.
-  if (metrics.length === 0) {
-    if (horizon === 30) metrics.push('Current strengths re-confirmed and baselined');
-    else if (horizon === 60) metrics.push('Momentum sustained; next strategic goal identified with the customer');
-    else metrics.push('Account re-scored and confirmed healthy; growth path agreed');
+  // Pattern-specific metrics (prepend — they are the most actionable).
+  const patternIds = new Set(patterns.map((p) => p.def.id));
+  const patternMetrics: string[] = [];
+  if (horizon === 30) {
+    if (patternIds.has('leadership_vacuum')) patternMetrics.push('New sponsor and champion identified; executive alignment meeting scheduled');
+    if (patternIds.has('deployment_blocker')) patternMetrics.push('Every deployment blocker documented with owner, resolution criteria, and target date');
+    if (patternIds.has('chaos_not_operationalized')) patternMetrics.push('Operationalization gap audit complete; pilot service selected for first pipeline experiment');
+    if (patternIds.has('value_realization_gap')) patternMetrics.push('Baseline metrics captured: experiment run rate, teams onboarded, MTTR');
+  } else if (horizon === 60) {
+    if (patternIds.has('leadership_vacuum')) patternMetrics.push('Bi-weekly champion cadence running; monthly sponsor review established');
+    if (patternIds.has('deployment_blocker')) patternMetrics.push('Product fully operational in customer environment; joint smoke test passed');
+    if (patternIds.has('chaos_not_operationalized')) patternMetrics.push('First pipeline-integrated chaos experiment shipped and running autonomously');
+    if (patternIds.has('value_realization_gap')) patternMetrics.push('Monthly experiment run rate trending upward vs. day-30 baseline');
+  } else {
+    if (patternIds.has('leadership_vacuum')) patternMetrics.push('EBR delivered; renewal intent secured from sponsor');
+    if (patternIds.has('deployment_blocker')) patternMetrics.push('Deployment runbook handed to customer; no open blockers');
+    if (patternIds.has('chaos_not_operationalized')) patternMetrics.push('3-5 services instrumented; Chaos CoE playbook delivered to customer team');
+    if (patternIds.has('value_realization_gap')) patternMetrics.push('ROI report delivered: quantified experiment run rate, incidents caught, MTTR improvement');
   }
-  return metrics.slice(0, 4);
+
+  const combined = [...patternMetrics, ...metrics];
+
+  // Fallback for strong accounts / horizons with no weak pillar or pattern match.
+  if (combined.length === 0) {
+    if (horizon === 30) combined.push('Current strengths re-confirmed and baselined');
+    else if (horizon === 60) combined.push('Momentum sustained; next strategic goal identified with the customer');
+    else combined.push('Account re-scored and confirmed healthy; growth path agreed');
+  }
+  return combined.slice(0, 5);
 }
 
 /** Exit criteria adapt to the account's starting status. */
@@ -699,29 +991,87 @@ function exitFor(horizon: 30 | 60 | 90, status: HealthStatus): string[] {
 // Executive summary
 // ---------------------------------------------------------------------------
 
+/**
+ * Consultant-grade executive summary.
+ *
+ * When patterns are detected the summary names them and explains how they
+ * compound each other, giving the reader an insight into the underlying
+ * dynamics rather than a list of bullet points. Account details (ARR,
+ * renewal date, product) are woven in so the summary reads as specific
+ * to THIS customer, not a generic template.
+ */
 function buildExecutiveSummary(
   status: HealthStatus,
   score: number,
   topRisks: Assessment[],
-  strengths: Assessment[]
+  strengths: Assessment[],
+  patterns: DetectedPattern[],
+  accountDetails?: AnalysisResult['accountDetails']
 ): string {
-  const riskList =
-    topRisks.length > 0
-      ? topRisks.slice(0, 3).map((r) => `“${r.question}”`).join(', ')
-      : 'no material gaps';
-  const strengthList =
-    strengths.length > 0
-      ? strengths.slice(0, 2).map((s) => `“${s.question}”`).join(', ')
-      : 'a solid foundation';
+  const get = (label: string) => accountDetails?.find((d) => d.label === label)?.value;
+  const accountName = get('Account Name');
+  const arr = get('ARR');
+  const renewal = get('Renewal Date');
+  const product = get('Product Purchased');
+  const region = get('Region');
 
-  const trajectory =
+  const subject = accountName
+    ? `${accountName}${product ? ` (${product})` : ''}${region ? `, ${region}` : ''}${arr ? `, $${arr} ARR` : ''}`
+    : 'This account';
+
+  const statusLine =
     status === 'Red'
-      ? 'The account is currently RED and requires immediate, senior-led intervention to avoid churn.'
+      ? `${subject} is currently RED (health score ${score}/100) and requires immediate, senior-led intervention to avoid churn.`
       : status === 'Yellow'
-      ? 'The account is YELLOW — recoverable, but at risk without a focused, time-bound plan.'
-      : 'The account is GREEN — the priority is to protect and grow the relationship.';
+      ? `${subject} is currently YELLOW (health score ${score}/100) — recoverable, but at risk without a focused, time-bound plan.`
+      : `${subject} is currently GREEN (health score ${score}/100).`;
 
-  return `${trajectory} Overall health scored ${score}/100 based on the uploaded assessment. The most pressing risks are ${riskList}. We will leverage existing strengths (${strengthList}) as anchors for recovery. This 30-60-90 plan sequences the work to move the account from ${status} → Yellow → Green: stabilize and re-align in the first 30 days, build demonstrable momentum by day 60, and prove durable value to secure the relationship by day 90.`;
+  const renewalLine = renewal ? ` Renewal is due ${renewal}.` : '';
+
+  if (patterns.length === 0) {
+    const riskList =
+      topRisks.length > 0
+        ? topRisks.slice(0, 3).map((r) => `"${r.question}"`).join(', ')
+        : 'no material gaps';
+    const strengthList =
+      strengths.length > 0
+        ? strengths.slice(0, 2).map((s) => `"${s.question}"`).join(', ')
+        : 'a solid foundation';
+    return `${statusLine}${renewalLine} The most pressing risks are ${riskList}. We will leverage existing strengths (${strengthList}) as anchors for recovery. This 30-60-90 plan: stabilize and re-align in days 0-30, build demonstrable momentum by day 60, prove durable value and secure the relationship by day 90.`;
+  }
+
+  const criticals = patterns.filter((p) => p.def.severity === 'Critical');
+  const highs = patterns.filter((p) => p.def.severity === 'High');
+
+  const patternLines = patterns
+    .slice(0, 4)
+    .map((p) => `[${p.def.severity}] ${p.def.name}: ${p.def.description}`);
+
+  let compoundingNote = '';
+  if (criticals.length >= 2) {
+    compoundingNote =
+      ` These ${criticals.length} Critical patterns are compounding each other: without executive alignment, deployment blockers cannot be escalated; without deployment, no value can be demonstrated; without a value story, the renewal is at risk.`;
+  } else if (criticals.length === 1 && highs.length >= 1) {
+    compoundingNote =
+      ` The Critical pattern is amplifying the High-severity issues — resolving ${criticals[0].def.name} first unlocks progress across all other areas.`;
+  }
+
+  const urgencyLine =
+    renewal && status === 'Red'
+      ? ` With renewal due ${renewal} and ${topRisks.length} unresolved risks, the window to recover this account is time-limited.`
+      : renewalLine;
+
+  const planSeq =
+    status === 'Red'
+      ? `This 30-60-90 plan sequences the recovery: re-establish executive trust and unblock deployment in days 0-30; deliver the first measurable chaos experiments and enablement wins by day 60; and build the evidence-based renewal business case by day 90.`
+      : `This 30-60-90 plan builds on existing strengths to systematically close the identified patterns and deliver a strong renewal narrative.`;
+
+  return (
+    `${statusLine}${urgencyLine} ` +
+    `${topRisks.length} risks were identified across ${[...new Set(topRisks.map((r) => r.tab))].length} assessment areas. ` +
+    `Pattern analysis reveals ${patterns.length} correlated risk cluster${patterns.length > 1 ? 's' : ''}: ${patternLines.join('. ')}.` +
+    `${compoundingNote} ${planSeq}`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -732,7 +1082,8 @@ export function buildAnalysis(
   fileName: string,
   items: Assessment[],
   warnings: string[] = [],
-  chaosMetrics?: AnalysisResult['chaosMetrics']
+  chaosMetrics?: AnalysisResult['chaosMetrics'],
+  accountDetails?: AnalysisResult['accountDetails']
 ): AnalysisResult {
   const tabs = summarizeTabs(items);
 
@@ -783,15 +1134,18 @@ export function buildAnalysis(
     score: ph.total > 0 ? Math.round((ph.yes / ph.total) * 100) : 0,
   }));
 
+  // Detect correlated risk patterns before building the plan.
+  // Patterns drive the primary plays; pillar plays serve as fallback.
+  const detectedPatterns = detectPatterns(topRisks);
+
   const plan: PlanPhase[] = [
-    buildPhase(30, pillarHealth, status),
-    buildPhase(60, pillarHealth, status),
-    buildPhase(90, pillarHealth, status),
+    buildPhase(30, pillarHealth, status, detectedPatterns),
+    buildPhase(60, pillarHealth, status, detectedPatterns),
+    buildPhase(90, pillarHealth, status, detectedPatterns),
   ];
 
   // Safety net: guarantee EVERY identified risk is addressed somewhere in the
-  // plan. Collect all risks already cited across every horizon's actions and,
-  // if any risk was not covered, append a dedicated day-90 catch-up action.
+  // plan. Pattern plays already cover matched risks; this catches any stragglers.
   const citedRisks = new Set<string>();
   for (const phase of plan) {
     for (const action of phase.actions) {
@@ -819,6 +1173,17 @@ export function buildAnalysis(
     }
   }
 
+  // Convert internal DetectedPattern to the exported RiskPattern type.
+  const riskPatterns: RiskPattern[] = detectedPatterns.map((p) => ({
+    id: p.def.id,
+    name: p.def.name,
+    severity: p.def.severity,
+    description: p.def.description,
+    rootCause: p.def.rootCause,
+    implication: p.def.implication,
+    matchedRisks: p.matchedRisks,
+  }));
+
   return {
     fileName,
     generatedAt: new Date().toISOString(),
@@ -827,8 +1192,10 @@ export function buildAnalysis(
     topRisks,
     strengths,
     plan,
-    executiveSummary: buildExecutiveSummary(status, score, topRisks, strengths),
+    executiveSummary: buildExecutiveSummary(status, score, topRisks, strengths, detectedPatterns, accountDetails),
     warnings: warnings.length ? warnings : undefined,
     chaosMetrics,
+    accountDetails: accountDetails && accountDetails.length ? accountDetails : undefined,
+    riskPatterns: riskPatterns.length ? riskPatterns : undefined,
   };
 }

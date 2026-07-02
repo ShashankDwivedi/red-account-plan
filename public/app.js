@@ -288,6 +288,26 @@
       'No strengths recorded yet.'
     );
 
+    // Account Details card (from the Account_Details tab), shown at the top.
+    var accountDetailsHtml = '';
+    if (data.accountDetails && data.accountDetails.length) {
+      accountDetailsHtml =
+        '<div class="card account-card"><h3>Account Details</h3>' +
+        '<p class="card-sub">Key account context from the Account Details tab.</p>' +
+        '<div class="detail-grid">' +
+        data.accountDetails
+          .map(function (d) {
+            return (
+              '<div class="detail-item">' +
+              '<div class="detail-label">' + esc(d.label) + '</div>' +
+              '<div class="detail-value">' + esc(d.value || '—') + '</div>' +
+              '</div>'
+            );
+          })
+          .join('') +
+        '</div></div>';
+    }
+
     // Chaos metric values card (only when live chaos data was fetched).
     var chaosMetricsHtml = '';
     if (data.chaosMetrics) {
@@ -315,17 +335,62 @@
         '</div></div>';
     }
 
+    // Correlated risk patterns card — the consultant's diagnosis.
+    var riskPatternsHtml = '';
+    if (data.riskPatterns && data.riskPatterns.length) {
+      var severityIcon = { Critical: '🔴', High: '🟠', Medium: '🟡' };
+      var patternCards = data.riskPatterns
+        .map(function (p) {
+          var icon = severityIcon[p.severity] || '⚪';
+          var risksPreview = p.matchedRisks.slice(0, 3).map(esc).join(' · ') +
+            (p.matchedRisks.length > 3 ? ' · +' + (p.matchedRisks.length - 3) + ' more' : '');
+          return (
+            '<div class="pattern-card pattern-' + esc(p.severity.toLowerCase()) + '">' +
+            '<div class="pattern-header">' +
+            '<span class="pattern-severity">' + icon + ' ' + esc(p.severity) + '</span>' +
+            '<span class="pattern-name">' + esc(p.name) + '</span>' +
+            '<span class="pattern-count">' + p.matchedRisks.length + ' risks</span>' +
+            '</div>' +
+            '<p class="pattern-headline">' + esc(p.description) + '</p>' +
+            '<div class="pattern-detail">' +
+            '<div class="pattern-row"><span class="pattern-key">Root Cause:</span><span>' + esc(p.rootCause) + '</span></div>' +
+            '<div class="pattern-row"><span class="pattern-key">Business Risk:</span><span>' + esc(p.implication) + '</span></div>' +
+            '<div class="pattern-row"><span class="pattern-key">Correlated risks:</span><span class="pattern-risks">' + risksPreview + '</span></div>' +
+            '</div>' +
+            '</div>'
+          );
+        })
+        .join('');
+      riskPatternsHtml =
+        '<div class="card">' +
+        '<h3>Correlated Risk Pattern Analysis <span class="count-pill">' + data.riskPatterns.length + '</span></h3>' +
+        '<p class="card-sub">The CS consultant engine identified these root-cause clusters — the 30-60-90 plan is structured to address each pattern, not just individual checkboxes.</p>' +
+        '<div class="pattern-grid">' + patternCards + '</div>' +
+        '</div>';
+    }
+
     const phasesHtml = data.plan
       .map(function (p) {
         const actions = p.actions
           .map(function (a) {
+            // Render multi-paragraph detail (pattern plays use \n\n as separator).
+            var detailHtml = esc(a.detail)
+              .replace(/\n\n/g, '</p><p class="action-detail">')
+              .replace(/\n/g, '<br>');
+
+            // Show a pattern tag if this action is driven by a detected pattern.
+            var patternTag = a.patternName
+              ? '<span class="action-pattern-tag">' + esc(a.patternName) + '</span>'
+              : '';
+
             return (
-              '<div class="action">' +
+              '<div class="action' + (a.patternId ? ' action-pattern' : '') + '">' +
               '<div class="action-head">' +
               '<span class="action-title">' + esc(a.title) + '</span>' +
               '<span class="prio prio-' + esc(a.priority) + '">' + esc(a.priority) + '</span>' +
               '</div>' +
-              '<p class="action-detail">' + esc(a.detail) + '</p>' +
+              (patternTag ? '<div class="action-pattern-row">' + patternTag + '</div>' : '') +
+              '<p class="action-detail">' + detailHtml + '</p>' +
               '<p class="action-owner">👤 <b>' + esc(a.owner) + '</b></p>' +
               (a.addresses
                 ? '<p class="action-addresses"><b>Addresses:</b> ' + esc(a.addresses) + '</p>'
@@ -389,6 +454,9 @@
           '</div>'
         : '') +
 
+      // Account details (top of report)
+      accountDetailsHtml +
+
       // Health card
       '<div class="card health-card">' +
       '<div class="gauge" style="--pct:' + o.score + ';--col:' + ragColor(o.status) + '">' +
@@ -406,6 +474,9 @@
 
       // Chaos metrics
       chaosMetricsHtml +
+
+      // Correlated risk patterns (consultant diagnosis)
+      riskPatternsHtml +
 
       // Tab breakdown
       '<div class="card"><h3>Health by Assessment Area</h3>' +

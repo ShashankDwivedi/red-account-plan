@@ -182,6 +182,22 @@ body {
   font-size: 14px; text-align: left;
 }
 
+.detail-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 20px; margin-top: 8px;
+}
+@media (max-width: 720px) { .detail-grid { grid-template-columns: repeat(2, 1fr); } }
+.detail-item {
+  padding: 10px 14px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.detail-label {
+  font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .03em; color: var(--ink-muted);
+}
+.detail-value {
+  margin-top: 3px; font-size: 15px; font-weight: 700; color: var(--ink);
+}
+
 .metric-grid {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 6px;
 }
@@ -216,6 +232,71 @@ body {
   background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
   padding: 12px 16px; border-radius: var(--radius-sm);
   font-size: 14px; line-height: 1.5; text-align: left;
+}
+
+/* ── Risk Pattern Cards ──────────────────────────────────────────────── */
+.pattern-grid {
+  display: flex; flex-direction: column; gap: 14px; margin-top: 10px;
+}
+.pattern-card {
+  border-radius: var(--radius-sm); padding: 16px 18px;
+  border-left: 4px solid transparent;
+  background: #f9fafb;
+}
+.pattern-card.pattern-critical {
+  border-left-color: #dc2626; background: #fef9f9;
+}
+.pattern-card.pattern-high {
+  border-left-color: #ea580c; background: #fff8f5;
+}
+.pattern-card.pattern-medium {
+  border-left-color: #ca8a04; background: #fefce8;
+}
+.pattern-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap;
+}
+.pattern-severity {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--ink-soft);
+}
+.pattern-name {
+  font-size: 15px; font-weight: 700; color: var(--ink);
+}
+.pattern-count {
+  margin-left: auto; font-size: 12px; font-weight: 600;
+  background: rgba(0,0,0,0.07); padding: 2px 10px; border-radius: 999px;
+  color: var(--ink-soft);
+}
+.pattern-headline {
+  font-size: 14px; font-weight: 500; color: var(--ink); margin: 4px 0 10px;
+  font-style: italic;
+}
+.pattern-detail {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.pattern-row {
+  font-size: 13px; line-height: 1.5; color: var(--ink-soft);
+  display: flex; gap: 6px;
+}
+.pattern-key {
+  font-weight: 600; color: var(--ink); white-space: nowrap; flex-shrink: 0;
+}
+.pattern-risks {
+  font-style: italic;
+}
+
+/* Pattern badge on plan actions */
+.action-pattern {
+  border-left: 3px solid var(--blue);
+}
+.action-pattern-row {
+  margin: 4px 0 6px;
+}
+.action-pattern-tag {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 10px; border-radius: 999px;
+  background: rgba(59,130,246,0.12); color: #1d4ed8;
+  letter-spacing: 0.3px;
 }
 
 .reassurance {
