@@ -341,27 +341,43 @@ function fillChaosTab(
   }
 }
 
+/** The four chaos fields in a stable order, with their threshold keys. */
+const CHAOS_ROWS: { key: keyof ChaosMetrics; label: string }[] = [
+  { key: 'teamsOnboardedPct', label: CHAOS_FIELD_LABELS.teamsOnboardedPct },
+  { key: 'licenseUtilizationPct', label: CHAOS_FIELD_LABELS.licenseUtilizationPct },
+  { key: 'avgMonthlyExperimentRuns', label: CHAOS_FIELD_LABELS.avgMonthlyExperimentRuns },
+  { key: 'totalExperimentRuns', label: CHAOS_FIELD_LABELS.totalExperimentRuns },
+];
+
 /**
  * Turn the four numeric chaos metrics into health-signal assessments using the
  * configured thresholds (>= threshold = healthy/ticked).
+ *
+ * When `metrics` is undefined (chaos data could not be fetched), the four
+ * fields are still emitted — as gaps with an explicit "data unavailable" note —
+ * so the Chaos-Data-Questionnaire tab is always analyzed and visible.
  */
-function chaosAssessments(metrics: ChaosMetrics): Assessment[] {
-  const rows: { key: keyof ChaosMetrics; label: string; value: number }[] = [
-    { key: 'teamsOnboardedPct', label: CHAOS_FIELD_LABELS.teamsOnboardedPct, value: metrics.teamsOnboardedPct },
-    { key: 'licenseUtilizationPct', label: CHAOS_FIELD_LABELS.licenseUtilizationPct, value: metrics.licenseUtilizationPct },
-    { key: 'avgMonthlyExperimentRuns', label: CHAOS_FIELD_LABELS.avgMonthlyExperimentRuns, value: metrics.avgMonthlyExperimentRuns },
-    { key: 'totalExperimentRuns', label: CHAOS_FIELD_LABELS.totalExperimentRuns, value: metrics.totalExperimentRuns },
-  ];
-
-  return rows.map((r) => {
-    const healthy = r.value >= CHAOS_THRESHOLDS[r.key];
+function chaosAssessments(metrics?: ChaosMetrics): Assessment[] {
+  return CHAOS_ROWS.map((r) => {
+    if (!metrics) {
+      return {
+        tab: CHAOS_TAB,
+        question: r.label,
+        answer: false,
+        negative: false,
+        isRisk: true,
+        notes: `Chaos data unavailable (could not reach Harness). Healthy when >= ${CHAOS_THRESHOLDS[r.key]}.`,
+      };
+    }
+    const value = metrics[r.key];
+    const healthy = value >= CHAOS_THRESHOLDS[r.key];
     return {
       tab: CHAOS_TAB,
       question: r.label,
       answer: healthy,
       negative: false,
       isRisk: !healthy,
-      notes: `Measured: ${r.value} (healthy when >= ${CHAOS_THRESHOLDS[r.key]})`,
+      notes: `Measured: ${value} (healthy when >= ${CHAOS_THRESHOLDS[r.key]})`,
     };
   });
 }
@@ -401,11 +417,11 @@ export async function parseWorkbook(
     if (!dup) items.push(c);
   }
 
-  // The Chaos-Data-Questionnaire is scored from the fetched metrics (not raw
-  // checkboxes), so it produces consistent, threshold-based health signals.
-  if (metrics) {
-    items = items.concat(chaosAssessments(metrics));
-  }
+  // The Chaos-Data-Questionnaire is always analyzed. When metrics are present
+  // it is scored from the fetched values against thresholds; when they are not
+  // (Harness unreachable) the four fields are emitted as explicit gaps so the
+  // tab is never silently dropped.
+  items = items.concat(chaosAssessments(metrics));
 
   return items;
 }

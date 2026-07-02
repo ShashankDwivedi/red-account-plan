@@ -90,13 +90,13 @@ export async function generateDocx(data: AnalysisResult): Promise<Buffer> {
   children.push(heading('Health by Assessment Area'));
   children.push(healthTable(data));
 
-  // ---- Risks & strengths ------------------------------------------------
-  children.push(heading('Top Risks'));
-  (data.topRisks.length ? data.topRisks.slice(0, 8) : [{ question: 'No gaps detected.' } as any]).forEach((r) =>
+  // ---- Risks & strengths (all items) ------------------------------------
+  children.push(heading(`Top Risks (${data.topRisks.length})`));
+  (data.topRisks.length ? data.topRisks : [{ question: 'No gaps detected.' } as any]).forEach((r) =>
     children.push(bullet(r.question, COLORS.red))
   );
-  children.push(heading('Strengths to Leverage'));
-  (data.strengths.length ? data.strengths.slice(0, 8) : [{ question: 'None recorded.' } as any]).forEach((s) =>
+  children.push(heading(`Strengths to Leverage (${data.strengths.length})`));
+  (data.strengths.length ? data.strengths : [{ question: 'None recorded.' } as any]).forEach((s) =>
     children.push(bullet(s.question, COLORS.green))
   );
 

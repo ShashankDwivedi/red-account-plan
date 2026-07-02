@@ -83,4 +83,6 @@ export interface AnalysisResult {
   strengths: Assessment[];
   plan: PlanPhase[];
   executiveSummary: string;
+  /** Non-fatal warnings to surface to the user (e.g. chaos data unavailable). */
+  warnings?: string[];
 }

@@ -241,7 +241,6 @@
     const risksHtml =
       data.topRisks.length > 0
         ? data.topRisks
-            .slice(0, 8)
             .map(function (r) {
               return (
                 '<li class="risk-item"><span class="icon">✕</span><span>' +
@@ -254,7 +253,6 @@
     const strengthsHtml =
       data.strengths.length > 0
         ? data.strengths
-            .slice(0, 8)
             .map(function (s) {
               return (
                 '<li class="strength-item"><span class="icon">✓</span><span>' +
@@ -331,6 +329,13 @@
       '</div>' +
       '</div>' +
 
+      // Non-fatal warnings (e.g. chaos data unavailable)
+      (data.warnings && data.warnings.length
+        ? '<div class="warning-banner" role="alert">⚠ ' +
+          data.warnings.map(esc).join('<br>⚠ ') +
+          '</div>'
+        : '') +
+
       // Health card
       '<div class="card health-card">' +
       '<div class="gauge" style="--pct:' + o.score + ';--col:' + ragColor(o.status) + '">' +
@@ -353,9 +358,9 @@
 
       // Risks & strengths
       '<div class="two-col">' +
-      '<div class="card"><h3>Top Risks</h3><p class="card-sub">Unmet criteria threatening the account.</p>' +
+      '<div class="card"><h3>Top Risks <span class="count-pill">' + data.topRisks.length + '</span></h3><p class="card-sub">All unmet criteria threatening the account.</p>' +
       '<ul class="chip-list">' + risksHtml + '</ul></div>' +
-      '<div class="card"><h3>Strengths to Leverage</h3><p class="card-sub">Met criteria to build recovery on.</p>' +
+      '<div class="card"><h3>Strengths to Leverage <span class="count-pill">' + data.strengths.length + '</span></h3><p class="card-sub">All met criteria to build recovery on.</p>' +
       '<ul class="chip-list">' + strengthsHtml + '</ul></div>' +
       '</div>' +
 

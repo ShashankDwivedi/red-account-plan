@@ -71,12 +71,17 @@ app.post(
       // Chaos-Data-Questionnaire tab. If Harness is unreachable, continue
       // analyzing the questionnaire tabs without the chaos data.
       let metrics: ChaosMetrics | undefined;
+      const warnings: string[] = [];
       try {
         metrics = await fetchChaosMetrics();
       } catch (e) {
-        console.warn(
-          'Chaos metrics fetch failed; continuing without chaos data:',
-          e instanceof Error ? e.message : e
+        const reason = e instanceof Error ? e.message : String(e);
+        console.warn('Chaos metrics fetch failed:', reason);
+        warnings.push(
+          'Live chaos data could not be fetched, so the Chaos-Data-Questionnaire ' +
+            'values were left blank and its fields are scored as gaps. Set ' +
+            'HARNESS_API_KEY, HARNESS_BASE_URL and HARNESS_ACCOUNT_ID in the ' +
+            'environment to enable them.'
         );
       }
 
@@ -90,7 +95,7 @@ app.post(
         });
       }
 
-      const analysis = buildAnalysis(req.file.originalname, items);
+      const analysis = buildAnalysis(req.file.originalname, items, warnings);
       res.json(analysis);
     } catch (e) {
       console.error(e);

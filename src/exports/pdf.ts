@@ -212,36 +212,35 @@ function drawSummary(doc: PDFKit.PDFDocument, data: AnalysisResult) {
   });
   y += 16;
 
-  // Risks & strengths side by side.
+  // Risks & strengths — full-width stacked lists so every item is shown.
   if (y > PAGE.height - M - 160) {
     doc.addPage();
     y = M;
   }
   y = sectionHeading(doc, 'Risks & Strengths', y);
-  const colW = (CONTENT_W - 20) / 2;
-  const startY = y;
 
-  const risksY = drawList(
+  y = drawList(
     doc,
     M,
-    startY,
-    colW,
-    'TOP RISKS',
-    data.topRisks.slice(0, 6).map((r) => s(r.question)),
+    y,
+    CONTENT_W,
+    `TOP RISKS (${data.topRisks.length})`,
+    data.topRisks.map((r) => s(r.question)),
     COLORS.red,
     'X'
   );
-  const strengthsY = drawList(
+  y += 14;
+  y = drawList(
     doc,
-    M + colW + 20,
-    startY,
-    colW,
-    'STRENGTHS TO LEVERAGE',
-    data.strengths.slice(0, 6).map((x) => s(x.question)),
+    M,
+    y,
+    CONTENT_W,
+    `STRENGTHS TO LEVERAGE (${data.strengths.length})`,
+    data.strengths.map((x) => s(x.question)),
     COLORS.green,
     'Y'
   );
-  doc.y = Math.max(risksY, strengthsY);
+  doc.y = y;
 }
 
 // --------------------------------------------------------------------------
@@ -384,6 +383,13 @@ function drawList(
   let cy = y + 16;
   const list = items.length ? items : ['None recorded.'];
   list.forEach((it) => {
+    // Measure this item and break to a new page if it won't fit.
+    doc.font('Helvetica').fontSize(9.5);
+    const itemH = doc.heightOfString(s(it), { width: w - 16, lineGap: 1 });
+    if (cy + itemH > PAGE.height - M) {
+      doc.addPage();
+      cy = M;
+    }
     doc.fill(hex(color)).font('Helvetica-Bold').fontSize(9).text(bullet, x, cy);
     doc
       .fill(hex(COLORS.inkSoft))

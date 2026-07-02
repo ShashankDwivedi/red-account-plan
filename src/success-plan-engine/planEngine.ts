@@ -461,6 +461,33 @@ const PHASE_META: Record<
  * - Pillars are ordered worst-first so the most critical work leads.
  * - Nothing is force-added: if a pillar isn't in the data, it isn't in the plan.
  */
+/**
+ * Split a pillar's gaps across the three horizons so that EVERY identified risk
+ * is addressed somewhere in the plan (not just the first few). The most severe
+ * pillars front-load more risks into the 0-30 day horizon.
+ */
+function gapsForHorizon(
+  gaps: Assessment[],
+  horizon: 30 | 60 | 90,
+  score: number
+): Assessment[] {
+  if (gaps.length === 0) return [];
+
+  // Critical/weak pillars tackle more up front; healthier pillars spread evenly.
+  const weights =
+    score < 40 ? [0.5, 0.3, 0.2] : score < 70 ? [0.4, 0.35, 0.25] : [0.34, 0.33, 0.33];
+
+  const n = gaps.length;
+  const c30 = Math.max(1, Math.round(n * weights[0]));
+  const c60 = Math.max(0, Math.round(n * weights[1]));
+  const i30 = Math.min(c30, n);
+  const i60 = Math.min(i30 + c60, n);
+
+  if (horizon === 30) return gaps.slice(0, i30);
+  if (horizon === 60) return gaps.slice(i30, i60);
+  return gaps.slice(i60); // 90 sweeps up everything remaining
+}
+
 function buildPhase(
   horizon: 30 | 60 | 90,
   pillarHealth: PillarHealth[],
@@ -482,9 +509,14 @@ function buildPhase(
       // Priority scales with severity of THIS pillar for THIS account.
       const priority = severityPriority(ph.score);
 
-      // Cite the specific unticked items so the play reflects the sheet.
-      const cited = ph.gaps.slice(0, 3).map((g) => g.question);
-      const addresses = cited.length > 0 ? cited.join('; ') : undefined;
+      // Every gap in this pillar is assigned to a horizon so that ALL risks are
+      // covered across the plan. Cite the specific risks this horizon handles.
+      const horizonGaps = gapsForHorizon(ph.gaps, horizon, ph.score);
+      const cited = horizonGaps.map((g) => g.question);
+      // If a horizon has no assigned gaps for this pillar, skip its action so we
+      // don't emit an empty play (the gaps are handled in another horizon).
+      if (cited.length === 0) continue;
+      const addresses = cited.join('; ');
 
       // Dynamically enrich the detail with the pillar's severity + specifics.
       const severityNote =
@@ -499,9 +531,11 @@ function buildPhase(
           ? ` Start with: ${cited[0]}.`
           : '';
 
+      const coverage = ` This horizon addresses ${cited.length} identified risk(s) in this area.`;
+
       actions.push({
         title: template.title,
-        detail: `${template.detail} ${severityNote}${focus}`,
+        detail: `${template.detail} ${severityNote}${focus}${coverage}`,
         owner: template.owner,
         priority,
         addresses,
@@ -696,7 +730,8 @@ function buildExecutiveSummary(
 
 export function buildAnalysis(
   fileName: string,
-  items: Assessment[]
+  items: Assessment[],
+  warnings: string[] = []
 ): AnalysisResult {
   const tabs = summarizeTabs(items);
 
@@ -753,6 +788,36 @@ export function buildAnalysis(
     buildPhase(90, pillarHealth, status),
   ];
 
+  // Safety net: guarantee EVERY identified risk is addressed somewhere in the
+  // plan. Collect all risks already cited across every horizon's actions and,
+  // if any risk was not covered, append a dedicated day-90 catch-up action.
+  const citedRisks = new Set<string>();
+  for (const phase of plan) {
+    for (const action of phase.actions) {
+      if (action.addresses) {
+        action.addresses.split(';').forEach((r) => citedRisks.add(r.trim()));
+      }
+    }
+  }
+  const uncovered = topRisks
+    .map((r) => r.question)
+    .filter((q) => !citedRisks.has(q.trim()));
+  if (uncovered.length > 0) {
+    const day90 = plan.find((p) => p.horizon === 90);
+    if (day90) {
+      day90.actions.push({
+        title: 'Close out remaining identified risks',
+        detail:
+          'Ensure no identified risk is left unaddressed. Drive each remaining ' +
+          `risk to resolution or an owned mitigation plan. Remaining risks (${uncovered.length}): ` +
+          `${uncovered.join('; ')}.`,
+        owner: 'CSM',
+        priority: 'High',
+        addresses: uncovered.join('; '),
+      });
+    }
+  }
+
   return {
     fileName,
     generatedAt: new Date().toISOString(),
@@ -762,5 +827,6 @@ export function buildAnalysis(
     strengths,
     plan,
     executiveSummary: buildExecutiveSummary(status, score, topRisks, strengths),
+    warnings: warnings.length ? warnings : undefined,
   };
 }

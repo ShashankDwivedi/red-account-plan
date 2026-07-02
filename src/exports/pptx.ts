@@ -140,14 +140,38 @@ function healthSlide(pptx: PptxGenJS, data: AnalysisResult) {
 }
 
 function risksSlide(pptx: PptxGenJS, data: AnalysisResult) {
-  const slide = pptx.addSlide();
-  slide.background = { color: 'FFFFFF' };
-  slideTitle(slide, pptx, 'Where we stand', 'Risks & Strengths');
+  // Show every risk / strength, paginating across slides so rows stay readable.
+  const PER_SLIDE = 8;
+  const risks = data.topRisks.map((r) => r.question);
+  const strengths = data.strengths.map((s) => s.question);
+  const slideCount = Math.max(
+    1,
+    Math.ceil(risks.length / PER_SLIDE),
+    Math.ceil(strengths.length / PER_SLIDE)
+  );
 
-  panelList(slide, pptx, 0.72, 1.6, 5.9, 'TOP RISKS', data.topRisks.slice(0, 6).map((r) => r.question), COLORS.red, COLORS.redSoft);
-  panelList(slide, pptx, 6.9, 1.6, 5.7, 'STRENGTHS TO LEVERAGE', data.strengths.slice(0, 6).map((s) => s.question), COLORS.green, COLORS.greenSoft);
+  for (let p = 0; p < slideCount; p++) {
+    const slide = pptx.addSlide();
+    slide.background = { color: 'FFFFFF' };
+    const suffix = slideCount > 1 ? ` (${p + 1}/${slideCount})` : '';
+    slideTitle(slide, pptx, 'Where we stand', 'Risks & Strengths' + suffix);
 
-  footer(slide, pptx);
+    const rChunk = risks.slice(p * PER_SLIDE, (p + 1) * PER_SLIDE);
+    const sChunk = strengths.slice(p * PER_SLIDE, (p + 1) * PER_SLIDE);
+
+    panelList(
+      slide, pptx, 0.72, 1.6, 5.9,
+      p === 0 ? `TOP RISKS (${risks.length})` : 'TOP RISKS (cont.)',
+      rChunk, COLORS.red, COLORS.redSoft
+    );
+    panelList(
+      slide, pptx, 6.9, 1.6, 5.7,
+      p === 0 ? `STRENGTHS TO LEVERAGE (${strengths.length})` : 'STRENGTHS (cont.)',
+      sChunk, COLORS.green, COLORS.greenSoft
+    );
+
+    footer(slide, pptx);
+  }
 }
 
 function phaseSlide(pptx: PptxGenJS, phase: PlanPhase) {
