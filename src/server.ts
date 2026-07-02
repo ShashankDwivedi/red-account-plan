@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import {
   parseWorkbook,
+  fillWorkbook,
   buildAnalysis,
   fetchChaosMetrics,
   ChaosMetrics,
@@ -96,6 +97,53 @@ app.post(
       res.status(500).json({
         error:
           'Failed to process the workbook. Please confirm it is a valid Excel file.',
+      });
+    }
+  }
+);
+
+// --------------------------------------------------------------------------
+// Filled workbook: return the uploaded Excel with the four chaos metrics
+// written into Col 2 of the Chaos-Data-Questionnaire tab.
+// --------------------------------------------------------------------------
+app.post(
+  '/api/fill',
+  (req: Request, res: Response, next: NextFunction) => {
+    upload.single('file')(req, res, (err: unknown) => {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: err.message });
+      }
+      if (err instanceof Error) {
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  },
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded.' });
+      }
+
+      const metrics = await fetchChaosMetrics();
+      const buffer = await fillWorkbook(req.file.buffer, metrics);
+
+      const base = req.file.originalname.replace(/\.[^.]+$/, '');
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${base}-filled.xlsx"`
+      );
+      res.setHeader('Content-Length', buffer.length);
+      res.send(buffer);
+    } catch (e) {
+      console.error('Fill failed:', e);
+      res.status(500).json({
+        error:
+          'Failed to fill the workbook. Confirm the Harness credentials in .env and that the file is a valid Excel workbook.',
       });
     }
   }

@@ -409,3 +409,19 @@ export async function parseWorkbook(
 
   return items;
 }
+
+/**
+ * Load a workbook, write the four chaos metrics into Col 2 of the
+ * Chaos-Data-Questionnaire tab, and return the updated workbook as an .xlsx
+ * buffer. Use this to hand the user back a file with the values filled in.
+ */
+export async function fillWorkbook(
+  buffer: Buffer,
+  metrics: ChaosMetrics
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+  fillChaosTab(workbook, metrics);
+  const out = await workbook.xlsx.writeBuffer();
+  return Buffer.from(out as ArrayBuffer);
+}

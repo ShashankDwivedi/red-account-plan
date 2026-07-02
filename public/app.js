@@ -177,6 +177,48 @@
     }
   }
 
+  async function downloadFilled(btn) {
+    if (!selectedFile) {
+      alert('Please re-upload the Excel file to download a filled copy.');
+      return;
+    }
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('is-loading');
+    btn.innerHTML = '<span class="mini-spinner"></span> Preparing…';
+    try {
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+      const res = await fetch('/api/fill', { method: 'POST', body: fd });
+      if (!res.ok) {
+        let msg = 'Could not fill the workbook.';
+        try {
+          msg = (await res.json()).error || msg;
+        } catch (e) {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const name = match ? match[1] : 'filled.xlsx';
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.message || 'Could not fill the workbook.');
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('is-loading');
+      btn.innerHTML = original;
+    }
+  }
+
   function renderResults(data) {
     currentAnalysis = data;
     const o = data.overall;
@@ -282,6 +324,8 @@
       iconFor('docx') + '<span>Word</span></button>' +
       '<button class="btn-export btn-export-pptx" data-format="pptx" title="Download as PowerPoint">' +
       iconFor('pptx') + '<span>PPT</span></button>' +
+      '<button id="fill-btn" class="btn-export btn-export-xlsx" title="Download the Excel with chaos values filled into Col 2">' +
+      iconFor('pptx') + '<span>Filled Excel</span></button>' +
       '</div>' +
       '<button id="restart-btn" class="btn-ghost">↑ New file</button>' +
       '</div>' +
@@ -324,13 +368,20 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     Array.prototype.forEach.call(
-      resultsView.querySelectorAll('.btn-export'),
+      resultsView.querySelectorAll('.btn-export[data-format]'),
       function (btn) {
         btn.addEventListener('click', function () {
           exportPlan(btn.getAttribute('data-format'), btn);
         });
       }
     );
+
+    var fillBtn = document.getElementById('fill-btn');
+    if (fillBtn) {
+      fillBtn.addEventListener('click', function () {
+        downloadFilled(fillBtn);
+      });
+    }
 
     document
       .getElementById('restart-btn')
