@@ -1152,7 +1152,17 @@ export function buildAnalysis(
 
   // Detect correlated risk patterns before building the plan.
   // Patterns drive the primary plays; pillar plays serve as fallback.
-  const detectedPatterns = detectPatterns(topRisks);
+  const rawPatterns = detectPatterns(topRisks);
+
+  // If license utilization is 0 the product is not deployed at all — the
+  // "Chaos Engineering Not Operationalized" pattern (probe templates, pipeline
+  // integration, etc.) is premature in this state.  The "Environment &
+  // Deployment Blockers" pattern already owns the root cause.  Remove it so
+  // the plan focuses on getting the product installed first.
+  const detectedPatterns =
+    chaosMetrics?.licenseUtilizationPct === 0
+      ? rawPatterns.filter((p) => p.def.id !== 'chaos_not_operationalized')
+      : rawPatterns;
 
   const plan: PlanPhase[] = [
     buildPhase(30, pillarHealth, status, detectedPatterns),
