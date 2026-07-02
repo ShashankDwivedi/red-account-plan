@@ -5,7 +5,7 @@ import {
   HealthStatus,
   PlanPhase,
   PlanAction,
-} from './types';
+} from '../types';
 
 /**
  * Customer Success plan engine.

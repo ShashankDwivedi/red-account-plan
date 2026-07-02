@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { Assessment } from './types';
+import { Assessment } from '../types';
 import { isNegativeQuestion, toIsRisk } from './polarity';
 
 /**

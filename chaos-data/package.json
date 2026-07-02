@@ -1,0 +1,28 @@
+{
+  "name": "chaos-data",
+  "version": "1.0.0",
+  "description": "Reads Harness credentials from .env and computes chaos onboarding thresholds from the licenses/modules API.",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "harness",
+    "chaos",
+    "licenses",
+    "onboarding"
+  ],
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.3"
+  }
+}

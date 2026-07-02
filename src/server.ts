@@ -1,8 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
-import { parseWorkbook } from './excelParser';
-import { buildAnalysis } from './planEngine';
+import { parseWorkbook, buildAnalysis } from './success-plan-engine';
 import { AnalysisResult } from './types';
 import { generatePdf } from './exports/pdf';
 import { generateDocx } from './exports/docx';
