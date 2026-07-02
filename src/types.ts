@@ -85,4 +85,11 @@ export interface AnalysisResult {
   executiveSummary: string;
   /** Non-fatal warnings to surface to the user (e.g. chaos data unavailable). */
   warnings?: string[];
+  /** Live chaos metric values (present when Harness data was fetched). */
+  chaosMetrics?: {
+    teamsOnboardedPct: number;
+    licenseUtilizationPct: number;
+    avgMonthlyExperimentRuns: number;
+    totalExperimentRuns: number;
+  };
 }

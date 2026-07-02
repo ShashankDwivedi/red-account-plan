@@ -15,7 +15,7 @@ import {
   TableLayoutType,
 } from 'docx';
 import { AnalysisResult, PlanPhase } from '../types';
-import { BRAND, COLORS, statusColors, horizonColor, PRIORITY_COLOR, formatDate } from './theme';
+import { BRAND, COLORS, statusColors, horizonColor, PRIORITY_COLOR, formatDate, splitByCategory } from './theme';
 
 /**
  * Executive-ready Word document built with `docx`.
@@ -90,15 +90,20 @@ export async function generateDocx(data: AnalysisResult): Promise<Buffer> {
   children.push(heading('Health by Assessment Area'));
   children.push(healthTable(data));
 
-  // ---- Risks & strengths (all items) ------------------------------------
-  children.push(heading(`Top Risks (${data.topRisks.length})`));
-  (data.topRisks.length ? data.topRisks : [{ question: 'No gaps detected.' } as any]).forEach((r) =>
-    children.push(bullet(r.question, COLORS.red))
-  );
-  children.push(heading(`Strengths to Leverage (${data.strengths.length})`));
-  (data.strengths.length ? data.strengths : [{ question: 'None recorded.' } as any]).forEach((s) =>
-    children.push(bullet(s.question, COLORS.green))
-  );
+  // ---- What's Not Working Well / What's Working Well (categorized) -------
+  children.push(heading(`What's Not Working Well (${data.topRisks.length})`));
+  categorizedBullets(
+    data.topRisks, COLORS.red,
+    'Business Related Risks', 'Chaos Risks',
+    'No gaps detected — every criterion is met.'
+  ).forEach((p) => children.push(p));
+
+  children.push(heading(`What's Working Well (${data.strengths.length})`));
+  categorizedBullets(
+    data.strengths, COLORS.green,
+    'Business Related Strengths', 'Chaos Strengths',
+    'None recorded.'
+  ).forEach((p) => children.push(p));
 
   // ---- Phases -----------------------------------------------------------
   data.plan.forEach((phase) => {
@@ -146,6 +151,35 @@ function bullet(text: string, color: string): Paragraph {
     bullet: { level: 0 },
     children: [new TextRun({ text, size: 21, color: COLORS.inkSoft, font: FONT })],
   });
+}
+
+function subHeading(text: string, color: string): Paragraph {
+  return new Paragraph({
+    spacing: { before: 160, after: 80 },
+    children: [new TextRun({ text: text.toUpperCase(), bold: true, size: 20, color, font: FONT })],
+  });
+}
+
+/** Render a categorized list (Business Related + Chaos) under a section. */
+function categorizedBullets(
+  items: { question: string; tab: string }[],
+  color: string,
+  businessLabel: string,
+  chaosLabel: string,
+  emptyMsg: string
+): Paragraph[] {
+  if (!items.length) return [bullet(emptyMsg, color)];
+  const { business, chaos } = splitByCategory(items);
+  const out: Paragraph[] = [];
+  if (business.length) {
+    out.push(subHeading(`${businessLabel} (${business.length})`, color));
+    business.forEach((i) => out.push(bullet(i.question, color)));
+  }
+  if (chaos.length) {
+    out.push(subHeading(`${chaosLabel} (${chaos.length})`, color));
+    chaos.forEach((i) => out.push(bullet(i.question, color)));
+  }
+  return out;
 }
 
 function noBorders() {

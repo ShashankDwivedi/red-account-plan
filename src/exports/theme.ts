@@ -1,4 +1,4 @@
-import { HealthStatus } from '../types';
+import { HealthStatus, Assessment } from '../types';
 
 /**
  * Shared brand + design tokens used across all export formats (PDF, DOCX, PPTX)
@@ -77,6 +77,26 @@ export function formatDate(iso: string): string {
     month: 'long',
     day: 'numeric',
   });
+}
+
+/**
+ * Category of an assessment item, based on which tab it came from:
+ *  - 'chaos'    -> Chaos-Data-Questionnaire
+ *  - 'business' -> everything else (Harness-Questionnaire)
+ */
+export function categoryOf(item: Pick<Assessment, 'tab'>): 'business' | 'chaos' {
+  const t = (item.tab || '').toLowerCase().replace(/[\s_-]+/g, '-');
+  return t.indexOf('chaos') !== -1 ? 'chaos' : 'business';
+}
+
+/** Split items into Business Related and Chaos groups (preserving order). */
+export function splitByCategory<T extends Pick<Assessment, 'tab'>>(
+  items: T[]
+): { business: T[]; chaos: T[] } {
+  return {
+    business: items.filter((i) => categoryOf(i) === 'business'),
+    chaos: items.filter((i) => categoryOf(i) === 'chaos'),
+  };
 }
 
 /** Safe file-name stem derived from the source workbook name. */

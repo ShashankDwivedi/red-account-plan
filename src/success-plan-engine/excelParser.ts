@@ -349,6 +349,14 @@ const CHAOS_ROWS: { key: keyof ChaosMetrics; label: string }[] = [
   { key: 'totalExperimentRuns', label: CHAOS_FIELD_LABELS.totalExperimentRuns },
 ];
 
+/** True if a question is one of the four numeric chaos metric labels. */
+function isChaosMetricLabel(question: string): boolean {
+  const q = (question || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return CHAOS_ROWS.some(
+    (r) => r.label.toLowerCase().replace(/\s+/g, ' ').trim() === q
+  );
+}
+
 /**
  * Turn the four numeric chaos metrics into health-signal assessments using the
  * configured thresholds (>= threshold = healthy/ticked).
@@ -403,24 +411,35 @@ export async function parseWorkbook(
   let items: Assessment[] = [];
   workbook.eachSheet((ws) => {
     if (!isAnalyzedTab(ws.name)) return; // only the two questionnaire tabs
-    if (normalizeTab(ws.name) === normalizeTab(CHAOS_TAB)) return; // handled below
-    items = items.concat(parseWorksheet(ws));
+    let parsed = parseWorksheet(ws);
+    // In the Chaos tab, the four metric rows are scored from fetched values
+    // (see chaosAssessments), so drop them here; keep all OTHER rows as normal
+    // checkbox questions (ticked = Yes, unticked = No).
+    if (normalizeTab(ws.name) === normalizeTab(CHAOS_TAB)) {
+      parsed = parsed.filter((i) => !isChaosMetricLabel(i.question));
+    }
+    items = items.concat(parsed);
   });
 
   const controls = await parseFormControls(workbook);
   for (const c of controls) {
     if (!isAnalyzedTab(c.tab)) continue;
-    if (normalizeTab(c.tab) === normalizeTab(CHAOS_TAB)) continue;
+    if (
+      normalizeTab(c.tab) === normalizeTab(CHAOS_TAB) &&
+      isChaosMetricLabel(c.question)
+    ) {
+      continue; // metric rows are handled by chaosAssessments
+    }
     const dup = items.some(
       (i) => i.tab === c.tab && i.question.toLowerCase() === c.question.toLowerCase()
     );
     if (!dup) items.push(c);
   }
 
-  // The Chaos-Data-Questionnaire is always analyzed. When metrics are present
-  // it is scored from the fetched values against thresholds; when they are not
-  // (Harness unreachable) the four fields are emitted as explicit gaps so the
-  // tab is never silently dropped.
+  // The four Chaos metric fields are always analyzed. When metrics are present
+  // they are scored from the fetched values against thresholds; when they are
+  // not (Harness unreachable) they are emitted as explicit gaps so they are
+  // never silently dropped. (The tab's other checkbox rows are parsed above.)
   items = items.concat(chaosAssessments(metrics));
 
   return items;

@@ -731,7 +731,8 @@ function buildExecutiveSummary(
 export function buildAnalysis(
   fileName: string,
   items: Assessment[],
-  warnings: string[] = []
+  warnings: string[] = [],
+  chaosMetrics?: AnalysisResult['chaosMetrics']
 ): AnalysisResult {
   const tabs = summarizeTabs(items);
 
@@ -828,5 +829,6 @@ export function buildAnalysis(
     plan,
     executiveSummary: buildExecutiveSummary(status, score, topRisks, strengths),
     warnings: warnings.length ? warnings : undefined,
+    chaosMetrics,
   };
 }

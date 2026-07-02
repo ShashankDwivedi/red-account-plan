@@ -238,29 +238,82 @@
       })
       .join('');
 
-    const risksHtml =
-      data.topRisks.length > 0
-        ? data.topRisks
-            .map(function (r) {
-              return (
-                '<li class="risk-item"><span class="icon">✕</span><span>' +
-                esc(r.question) + '</span></li>'
-              );
-            })
-            .join('')
-        : '<li class="strength-item"><span class="icon">✓</span>No gaps detected — every criterion is met.</li>';
+    // Categorize an item by which tab it came from.
+    function categoryOf(item) {
+      var t = (item.tab || '').toLowerCase().replace(/[\s_-]+/g, '-');
+      if (t.indexOf('chaos') !== -1) return 'chaos';
+      return 'business';
+    }
 
-    const strengthsHtml =
-      data.strengths.length > 0
-        ? data.strengths
-            .map(function (s) {
-              return (
-                '<li class="strength-item"><span class="icon">✓</span><span>' +
-                esc(s.question) + '</span></li>'
-              );
-            })
-            .join('')
-        : '<li class="risk-item"><span class="icon">✕</span>No strengths recorded yet.</li>';
+    // Render a categorized set (Business Related + Chaos) of items as sub-groups.
+    function renderCategorized(items, itemClass, icon, businessLabel, chaosLabel, emptyMsg) {
+      if (!items || items.length === 0) {
+        return (
+          '<li class="' + (itemClass === 'risk-item' ? 'strength-item' : 'risk-item') +
+          '"><span class="icon">' + (itemClass === 'risk-item' ? '✓' : '✕') + '</span>' +
+          emptyMsg + '</li>'
+        );
+      }
+      var business = items.filter(function (i) { return categoryOf(i) === 'business'; });
+      var chaos = items.filter(function (i) { return categoryOf(i) === 'chaos'; });
+
+      function group(label, groupItems) {
+        if (groupItems.length === 0) return '';
+        var lis = groupItems
+          .map(function (i) {
+            return (
+              '<li class="' + itemClass + '"><span class="icon">' + icon +
+              '</span><span>' + esc(i.question) + '</span></li>'
+            );
+          })
+          .join('');
+        return (
+          '<li class="cat-heading">' + esc(label) +
+          ' <span class="count-pill">' + groupItems.length + '</span></li>' + lis
+        );
+      }
+
+      return group(businessLabel, business) + group(chaosLabel, chaos);
+    }
+
+    var risksHtml = renderCategorized(
+      data.topRisks, 'risk-item', '✕',
+      'Business Related Risks', 'Chaos Risks',
+      'No gaps detected — every criterion is met.'
+    );
+
+    var strengthsHtml = renderCategorized(
+      data.strengths, 'strength-item', '✓',
+      'Business Related Strengths', 'Chaos Strengths',
+      'No strengths recorded yet.'
+    );
+
+    // Chaos metric values card (only when live chaos data was fetched).
+    var chaosMetricsHtml = '';
+    if (data.chaosMetrics) {
+      var m = data.chaosMetrics;
+      var metricDefs = [
+        { label: 'Percentage of Teams Onboarded', value: m.teamsOnboardedPct, suffix: '%' },
+        { label: 'License Utilisation', value: m.licenseUtilizationPct, suffix: '%' },
+        { label: 'Avg Monthly Experiment Runs', value: m.avgMonthlyExperimentRuns, suffix: '' },
+        { label: 'Total Number of Experiment Runs', value: m.totalExperimentRuns, suffix: '' },
+      ];
+      chaosMetricsHtml =
+        '<div class="card"><h3>Chaos Data Metrics</h3>' +
+        '<p class="card-sub">Live values fetched from Harness for this account.</p>' +
+        '<div class="metric-grid">' +
+        metricDefs
+          .map(function (d) {
+            return (
+              '<div class="metric-tile">' +
+              '<div class="metric-value">' + esc(String(d.value)) + esc(d.suffix) + '</div>' +
+              '<div class="metric-label">' + esc(d.label) + '</div>' +
+              '</div>'
+            );
+          })
+          .join('') +
+        '</div></div>';
+    }
 
     const phasesHtml = data.plan
       .map(function (p) {
@@ -351,6 +404,9 @@
       '<span class="stat"><b>' + data.tabs.length + '</b>Tabs analyzed</span>' +
       '</div></div></div>' +
 
+      // Chaos metrics
+      chaosMetricsHtml +
+
       // Tab breakdown
       '<div class="card"><h3>Health by Assessment Area</h3>' +
       '<p class="card-sub">Percentage of criteria met per worksheet tab (lowest first).</p>' +
@@ -358,9 +414,9 @@
 
       // Risks & strengths
       '<div class="two-col">' +
-      '<div class="card"><h3>Top Risks <span class="count-pill">' + data.topRisks.length + '</span></h3><p class="card-sub">All unmet criteria threatening the account.</p>' +
+      '<div class="card"><h3>What\'s Not Working Well <span class="count-pill">' + data.topRisks.length + '</span></h3><p class="card-sub">All unmet criteria threatening the account, by area.</p>' +
       '<ul class="chip-list">' + risksHtml + '</ul></div>' +
-      '<div class="card"><h3>Strengths to Leverage <span class="count-pill">' + data.strengths.length + '</span></h3><p class="card-sub">All met criteria to build recovery on.</p>' +
+      '<div class="card"><h3>What\'s Working Well <span class="count-pill">' + data.strengths.length + '</span></h3><p class="card-sub">All met criteria to build recovery on, by area.</p>' +
       '<ul class="chip-list">' + strengthsHtml + '</ul></div>' +
       '</div>' +
 

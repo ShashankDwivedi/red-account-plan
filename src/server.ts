@@ -95,7 +95,12 @@ app.post(
         });
       }
 
-      const analysis = buildAnalysis(req.file.originalname, items, warnings);
+      const analysis = buildAnalysis(
+        req.file.originalname,
+        items,
+        warnings,
+        metrics
+      );
       res.json(analysis);
     } catch (e) {
       console.error(e);

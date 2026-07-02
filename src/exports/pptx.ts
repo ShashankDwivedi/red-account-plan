@@ -1,6 +1,6 @@
 import PptxGenJS from 'pptxgenjs';
 import { AnalysisResult, PlanPhase } from '../types';
-import { BRAND, COLORS, statusColors, horizonColor, PRIORITY_COLOR, formatDate } from './theme';
+import { BRAND, COLORS, statusColors, horizonColor, PRIORITY_COLOR, formatDate, splitByCategory } from './theme';
 
 /**
  * Executive-ready slide deck built with pptxgenjs (16:9).
@@ -140,34 +140,68 @@ function healthSlide(pptx: PptxGenJS, data: AnalysisResult) {
 }
 
 function risksSlide(pptx: PptxGenJS, data: AnalysisResult) {
-  // Show every risk / strength, paginating across slides so rows stay readable.
+  // Two categorized slides: What's Not Working Well, then What's Working Well.
+  categorizedSlides(
+    pptx,
+    'Where we stand',
+    "What's Not Working Well",
+    data.topRisks,
+    COLORS.red,
+    COLORS.redSoft,
+    'Business Related Risks',
+    'Chaos Risks'
+  );
+  categorizedSlides(
+    pptx,
+    'What we can build on',
+    "What's Working Well",
+    data.strengths,
+    COLORS.green,
+    COLORS.greenSoft,
+    'Business Related Strengths',
+    'Chaos Strengths'
+  );
+}
+
+/**
+ * Render one section (risks OR strengths) as Business Related + Chaos panels,
+ * paginating each panel across slides so rows stay readable.
+ */
+function categorizedSlides(
+  pptx: PptxGenJS,
+  kicker: string,
+  title: string,
+  items: AnalysisResult['topRisks'],
+  color: string,
+  soft: string,
+  businessLabel: string,
+  chaosLabel: string
+) {
   const PER_SLIDE = 8;
-  const risks = data.topRisks.map((r) => r.question);
-  const strengths = data.strengths.map((s) => s.question);
+  const { business, chaos } = splitByCategory(items);
+  const b = business.map((i) => i.question);
+  const c = chaos.map((i) => i.question);
   const slideCount = Math.max(
     1,
-    Math.ceil(risks.length / PER_SLIDE),
-    Math.ceil(strengths.length / PER_SLIDE)
+    Math.ceil(b.length / PER_SLIDE),
+    Math.ceil(c.length / PER_SLIDE)
   );
 
   for (let p = 0; p < slideCount; p++) {
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };
     const suffix = slideCount > 1 ? ` (${p + 1}/${slideCount})` : '';
-    slideTitle(slide, pptx, 'Where we stand', 'Risks & Strengths' + suffix);
-
-    const rChunk = risks.slice(p * PER_SLIDE, (p + 1) * PER_SLIDE);
-    const sChunk = strengths.slice(p * PER_SLIDE, (p + 1) * PER_SLIDE);
+    slideTitle(slide, pptx, kicker, title + suffix);
 
     panelList(
       slide, pptx, 0.72, 1.6, 5.9,
-      p === 0 ? `TOP RISKS (${risks.length})` : 'TOP RISKS (cont.)',
-      rChunk, COLORS.red, COLORS.redSoft
+      p === 0 ? `${businessLabel} (${b.length})`.toUpperCase() : `${businessLabel} (cont.)`.toUpperCase(),
+      b.slice(p * PER_SLIDE, (p + 1) * PER_SLIDE), color, soft
     );
     panelList(
       slide, pptx, 6.9, 1.6, 5.7,
-      p === 0 ? `STRENGTHS TO LEVERAGE (${strengths.length})` : 'STRENGTHS (cont.)',
-      sChunk, COLORS.green, COLORS.greenSoft
+      p === 0 ? `${chaosLabel} (${c.length})`.toUpperCase() : `${chaosLabel} (cont.)`.toUpperCase(),
+      c.slice(p * PER_SLIDE, (p + 1) * PER_SLIDE), color, soft
     );
 
     footer(slide, pptx);

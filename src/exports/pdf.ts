@@ -8,6 +8,7 @@ import {
   horizonColor,
   PRIORITY_COLOR,
   formatDate,
+  splitByCategory,
 } from './theme';
 
 /**
@@ -217,28 +218,36 @@ function drawSummary(doc: PDFKit.PDFDocument, data: AnalysisResult) {
     doc.addPage();
     y = M;
   }
-  y = sectionHeading(doc, 'Risks & Strengths', y);
+  y = sectionHeading(doc, "What's Not Working Well & What's Working Well", y);
 
+  const risks = splitByCategory(data.topRisks);
+  const strengths = splitByCategory(data.strengths);
+
+  // What's Not Working Well (risks), categorized.
   y = drawList(
-    doc,
-    M,
-    y,
-    CONTENT_W,
-    `TOP RISKS (${data.topRisks.length})`,
-    data.topRisks.map((r) => s(r.question)),
-    COLORS.red,
-    'X'
+    doc, M, y, CONTENT_W,
+    `WHAT'S NOT WORKING WELL — BUSINESS RELATED RISKS (${risks.business.length})`,
+    risks.business.map((r) => s(r.question)), COLORS.red, 'X'
   );
-  y += 14;
+  y += 10;
   y = drawList(
-    doc,
-    M,
-    y,
-    CONTENT_W,
-    `STRENGTHS TO LEVERAGE (${data.strengths.length})`,
-    data.strengths.map((x) => s(x.question)),
-    COLORS.green,
-    'Y'
+    doc, M, y, CONTENT_W,
+    `WHAT'S NOT WORKING WELL — CHAOS RISKS (${risks.chaos.length})`,
+    risks.chaos.map((r) => s(r.question)), COLORS.red, 'X'
+  );
+  y += 16;
+
+  // What's Working Well (strengths), categorized.
+  y = drawList(
+    doc, M, y, CONTENT_W,
+    `WHAT'S WORKING WELL — BUSINESS RELATED STRENGTHS (${strengths.business.length})`,
+    strengths.business.map((x) => s(x.question)), COLORS.green, 'Y'
+  );
+  y += 10;
+  y = drawList(
+    doc, M, y, CONTENT_W,
+    `WHAT'S WORKING WELL — CHAOS STRENGTHS (${strengths.chaos.length})`,
+    strengths.chaos.map((x) => s(x.question)), COLORS.green, 'Y'
   );
   doc.y = y;
 }
