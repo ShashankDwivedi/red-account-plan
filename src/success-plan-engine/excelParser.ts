@@ -1,6 +1,23 @@
 import ExcelJS from 'exceljs';
 import { Assessment } from '../types';
 import { isNegativeQuestion, toIsRisk } from './polarity';
+import { ChaosMetrics, CHAOS_FIELD_LABELS } from './chaosData';
+
+/** Tabs that drive the success plan. Analysis is scoped to these only. */
+export const CHAOS_TAB = 'Chaos-Data-Questionnaire';
+export const HARNESS_TAB = 'Harness-Questionnaire';
+const ANALYZED_TABS = new Set([HARNESS_TAB.toLowerCase(), CHAOS_TAB.toLowerCase()]);
+
+/**
+ * Health thresholds for the four numeric chaos metrics. A value is HEALTHY
+ * (counts as a ticked/Yes) when it is >= the threshold; otherwise it is a gap.
+ */
+const CHAOS_THRESHOLDS: Record<keyof ChaosMetrics, number> = {
+  teamsOnboardedPct: 50,
+  licenseUtilizationPct: 50,
+  avgMonthlyExperimentRuns: 50,
+  totalExperimentRuns: 500,
+};
 
 /**
  * Extracts assessment answers from an Excel workbook.
@@ -268,23 +285,126 @@ async function parseFormControls(
   return extra;
 }
 
-/** Read a workbook buffer and return every assessment item across all tabs. */
-export async function parseWorkbook(buffer: Buffer): Promise<Assessment[]> {
+/** Loosely normalize a tab name so "Chaos_Data Questionnaire" == "Chaos-Data-Questionnaire". */
+function normalizeTab(name: string): string {
+  return name.toLowerCase().replace(/[\s_-]+/g, '-').trim();
+}
+
+/** Is this worksheet one of the two tabs that drive the plan? */
+function isAnalyzedTab(name: string): boolean {
+  const n = normalizeTab(name);
+  return ANALYZED_TABS.has(n);
+}
+
+/**
+ * Locate the Chaos-Data-Questionnaire worksheet and write each computed metric
+ * into the value cell immediately to the right of its label. If a label is not
+ * found it is appended as a new row so the value is still recorded.
+ */
+function fillChaosTab(
+  workbook: ExcelJS.Workbook,
+  metrics: ChaosMetrics
+): void {
+  const ws = workbook.worksheets.find(
+    (w) => normalizeTab(w.name) === normalizeTab(CHAOS_TAB)
+  );
+  if (!ws) return;
+
+  const targets: { label: string; value: number }[] = [
+    { label: CHAOS_FIELD_LABELS.teamsOnboardedPct, value: metrics.teamsOnboardedPct },
+    { label: CHAOS_FIELD_LABELS.licenseUtilizationPct, value: metrics.licenseUtilizationPct },
+    { label: CHAOS_FIELD_LABELS.avgMonthlyExperimentRuns, value: metrics.avgMonthlyExperimentRuns },
+    { label: CHAOS_FIELD_LABELS.totalExperimentRuns, value: metrics.totalExperimentRuns },
+  ];
+
+  for (const t of targets) {
+    const wanted = t.label.toLowerCase().replace(/\s+/g, ' ').trim();
+    let filled = false;
+
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      if (filled) return;
+      let labelCol = -1;
+      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        const text = cellText(cell.value).toLowerCase().replace(/\s+/g, ' ').trim();
+        if (text === wanted) labelCol = colNumber;
+      });
+      if (labelCol !== -1) {
+        row.getCell(labelCol + 1).value = t.value;
+        row.commit();
+        filled = true;
+      }
+    });
+
+    if (!filled) {
+      ws.addRow([t.label, t.value]).commit();
+    }
+  }
+}
+
+/**
+ * Turn the four numeric chaos metrics into health-signal assessments using the
+ * configured thresholds (>= threshold = healthy/ticked).
+ */
+function chaosAssessments(metrics: ChaosMetrics): Assessment[] {
+  const rows: { key: keyof ChaosMetrics; label: string; value: number }[] = [
+    { key: 'teamsOnboardedPct', label: CHAOS_FIELD_LABELS.teamsOnboardedPct, value: metrics.teamsOnboardedPct },
+    { key: 'licenseUtilizationPct', label: CHAOS_FIELD_LABELS.licenseUtilizationPct, value: metrics.licenseUtilizationPct },
+    { key: 'avgMonthlyExperimentRuns', label: CHAOS_FIELD_LABELS.avgMonthlyExperimentRuns, value: metrics.avgMonthlyExperimentRuns },
+    { key: 'totalExperimentRuns', label: CHAOS_FIELD_LABELS.totalExperimentRuns, value: metrics.totalExperimentRuns },
+  ];
+
+  return rows.map((r) => {
+    const healthy = r.value >= CHAOS_THRESHOLDS[r.key];
+    return {
+      tab: CHAOS_TAB,
+      question: r.label,
+      answer: healthy,
+      negative: false,
+      isRisk: !healthy,
+      notes: `Measured: ${r.value} (healthy when >= ${CHAOS_THRESHOLDS[r.key]})`,
+    };
+  });
+}
+
+/**
+ * Read a workbook buffer and return the assessment items that drive the plan.
+ *
+ * Behaviour:
+ *  - If `metrics` are provided, the four values are written into the
+ *    Chaos-Data-Questionnaire tab and evaluated against health thresholds.
+ *  - Analysis is scoped to the Harness-Questionnaire and
+ *    Chaos-Data-Questionnaire tabs only; all other tabs are ignored.
+ */
+export async function parseWorkbook(
+  buffer: Buffer,
+  metrics?: ChaosMetrics
+): Promise<Assessment[]> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
 
+  if (metrics) fillChaosTab(workbook, metrics);
+
   let items: Assessment[] = [];
   workbook.eachSheet((ws) => {
+    if (!isAnalyzedTab(ws.name)) return; // only the two questionnaire tabs
+    if (normalizeTab(ws.name) === normalizeTab(CHAOS_TAB)) return; // handled below
     items = items.concat(parseWorksheet(ws));
   });
 
   const controls = await parseFormControls(workbook);
-  // De-duplicate control items already captured via cell scan.
   for (const c of controls) {
+    if (!isAnalyzedTab(c.tab)) continue;
+    if (normalizeTab(c.tab) === normalizeTab(CHAOS_TAB)) continue;
     const dup = items.some(
       (i) => i.tab === c.tab && i.question.toLowerCase() === c.question.toLowerCase()
     );
     if (!dup) items.push(c);
+  }
+
+  // The Chaos-Data-Questionnaire is scored from the fetched metrics (not raw
+  // checkboxes), so it produces consistent, threshold-based health signals.
+  if (metrics) {
+    items = items.concat(chaosAssessments(metrics));
   }
 
   return items;

@@ -105,3 +105,29 @@ export function computeTeamsOnboarded(
     percentage: Math.round(ratio * 100 * 10) / 10,
   };
 }
+
+/** Months used to derive the average monthly experiment runs. */
+export const MONTHS_IN_YEAR = 12;
+
+export interface ExperimentRunStats {
+  totalExperimentRuns: number;
+  monthsDivisor: number;
+  /** totalExperimentRuns / 12, rounded to 1 decimal. */
+  avgMonthlyExperimentRuns: number;
+}
+
+/**
+ * Experiment run stats:
+ *   total       = sum of experimentRuns across services
+ *   avg monthly = totalExperimentRuns / 12
+ */
+export function computeExperimentRunStats(
+  totalExperimentRuns: number
+): ExperimentRunStats {
+  const avg = totalExperimentRuns / MONTHS_IN_YEAR;
+  return {
+    totalExperimentRuns,
+    monthsDivisor: MONTHS_IN_YEAR,
+    avgMonthlyExperimentRuns: Math.round(avg * 10) / 10,
+  };
+}

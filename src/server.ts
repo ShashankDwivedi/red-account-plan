@@ -1,7 +1,12 @@
 import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
-import { parseWorkbook, buildAnalysis } from './success-plan-engine';
+import {
+  parseWorkbook,
+  buildAnalysis,
+  fetchChaosMetrics,
+  ChaosMetrics,
+} from './success-plan-engine';
 import { AnalysisResult } from './types';
 import { generatePdf } from './exports/pdf';
 import { generateDocx } from './exports/docx';
@@ -61,7 +66,20 @@ app.post(
         return res.status(400).json({ error: 'No file uploaded.' });
       }
 
-      const items = await parseWorkbook(req.file.buffer);
+      // Fetch the four chaos metrics from Harness and inject them into the
+      // Chaos-Data-Questionnaire tab. If Harness is unreachable, continue
+      // analyzing the questionnaire tabs without the chaos data.
+      let metrics: ChaosMetrics | undefined;
+      try {
+        metrics = await fetchChaosMetrics();
+      } catch (e) {
+        console.warn(
+          'Chaos metrics fetch failed; continuing without chaos data:',
+          e instanceof Error ? e.message : e
+        );
+      }
+
+      const items = await parseWorkbook(req.file.buffer, metrics);
 
       if (items.length === 0) {
         return res.status(422).json({

@@ -22,6 +22,9 @@ file and computes chaos onboarding thresholds from the Harness
    (paginated), counts the **unique projects** (distinct `orgID/projectID`) with
    chaos activity, and divides that by the onboarding threshold from step 1 to
    produce the **percentage of teams onboarded**.
+5. **Experiment runs** — from the same `service/` data, sums `experimentRuns`
+   across all services to produce **Total Experiment Runs**, and divides that by
+   **12** to produce **Avg Monthly Experiment Runs**.
 
 ## Setup
 
@@ -61,6 +64,8 @@ node dist/index.js --days 90
 onboarding threshold = floor(secondaryEntitlement / 3)
 license utilization  = (totalUsage / secondaryEntitlement) * 100   [%]
 teams onboarded      = (uniqueProjects / onboardingThreshold) * 100 [%]
+total experiment runs = sum(experimentRuns across services)
+avg monthly runs      = totalExperimentRuns / 12
 ```
 
 For the threshold, both the raw (fractional) value and the floored whole number

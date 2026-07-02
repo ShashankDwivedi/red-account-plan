@@ -12,6 +12,18 @@ async function main() {
   const wb = new ExcelJS.Workbook();
 
   const tabs: Record<string, [string, boolean][]> = {
+    // Primary tab analyzed for the plan (checkbox-style answers).
+    'Harness-Questionnaire': [
+      ['Executive sponsor is identified and engaged', false],
+      ['We have a mobilized internal champion', true],
+      ['Business outcomes and success criteria are documented', false],
+      ['Success KPIs are baselined with current-state metrics', false],
+      ['Core workflows are adopted by the team', true],
+      ['Users have completed onboarding/training', false],
+      ['Latest CSAT/NPS is positive', true],
+      ['No open P1/critical issues', true],
+      ['Renewal date and contract terms are confirmed', false],
+    ],
     Relationship: [
       ['Executive sponsor is identified and engaged', false],
       ['We have a mobilized internal champion', false],
@@ -69,6 +81,23 @@ async function main() {
     for (const [question, checked] of rows) {
       ws.addRow({ q: question, a: checked });
     }
+  }
+
+  // Chaos-Data-Questionnaire: label -> value rows. Values are left blank; the
+  // app fills them at upload time from the live Harness chaos data.
+  const chaos = wb.addWorksheet('Chaos-Data-Questionnaire');
+  chaos.columns = [
+    { header: 'Metric', key: 'q', width: 45 },
+    { header: 'Value', key: 'v', width: 15 },
+  ];
+  chaos.getRow(1).font = { bold: true };
+  for (const label of [
+    'Percentage Of Teams Onboarded',
+    'License Utilisation Percentage',
+    'Avg Monthly Experiment Runs',
+    'Total Number of Experiment Executions',
+  ]) {
+    chaos.addRow({ q: label, v: '' });
   }
 
   const outPath = path.join(process.cwd(), 'sample-account-health.xlsx');

@@ -4,6 +4,7 @@ import {
   computeOnboardingThreshold,
   computeLicenseUtilization,
   computeTeamsOnboarded,
+  computeExperimentRunStats,
 } from './thresholds';
 
 /**
@@ -16,6 +17,8 @@ import {
  *    license utilization percentage.
  * 4. Fetches service utilisation -> counts unique onboarded projects, then
  *    uniqueProjects / threshold gives the percentage of teams onboarded.
+ * 5. From the same service utilisation data, sums experimentRuns to give total
+ *    and average monthly (total / 12) experiment runs.
  */
 async function main() {
   const asJson = process.argv.includes('--json');
@@ -38,12 +41,13 @@ async function main() {
     threshold.secondaryEntitlement
   );
 
-  // --- Step 3: percentage of teams onboarded ---------------------------------
-  const onboarded = await client.getOnboardedProjects(startTime, endTime);
+  // --- Steps 3 & 4: teams onboarded + experiment runs (one API scan) ---------
+  const service = await client.getServiceUtilisation(startTime, endTime);
   const teams = computeTeamsOnboarded(
-    onboarded.uniqueProjects,
+    service.uniqueProjects,
     threshold.threshold
   );
+  const runs = computeExperimentRunStats(service.totalExperimentRuns);
 
   if (asJson) {
     console.log(
@@ -55,8 +59,9 @@ async function main() {
           licenseUtilization: utilization,
           teamsOnboarded: {
             ...teams,
-            projectKeys: onboarded.projectKeys,
+            projectKeys: service.projectKeys,
           },
+          experimentRuns: runs,
         },
         null,
         2
@@ -97,6 +102,14 @@ async function main() {
     `  Ratio:                     ${teams.ratio} (= ${teams.uniqueProjects} / ${teams.threshold})`
   );
   console.log(`  => Teams onboarded:        ${teams.percentage}%`);
+  console.log('');
+  console.log(`  4) Experiment runs (last ${days} days)`);
+  console.log('  ---------------------------------------------');
+  console.log(`  Total experiment runs:     ${runs.totalExperimentRuns}`);
+  console.log(`  Months divisor:            ${runs.monthsDivisor}`);
+  console.log(
+    `  => Avg monthly runs:       ${runs.avgMonthlyExperimentRuns} (= ${runs.totalExperimentRuns} / ${runs.monthsDivisor})`
+  );
   console.log('');
 }
 

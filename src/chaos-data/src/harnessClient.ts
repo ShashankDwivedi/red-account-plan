@@ -35,6 +35,8 @@ export interface ServiceEntry {
   orgID?: string;
   projectID?: string;
   serviceID?: string;
+  experiments?: number;
+  experimentRuns?: number;
   [key: string]: unknown;
 }
 
@@ -44,14 +46,18 @@ interface ServiceResponse {
   [key: string]: unknown;
 }
 
-/** Result of scanning the service utilisation API for onboarded projects. */
-export interface OnboardedProjects {
+/** Aggregated result of scanning the service utilisation API. */
+export interface ServiceUtilisationSummary {
   /** Count of distinct orgID/projectID combinations with chaos activity. */
   uniqueProjects: number;
   /** The distinct "org/project" keys (useful for debugging / display). */
   projectKeys: string[];
   /** Total service entries scanned. */
   totalServices: number;
+  /** Sum of experimentRuns across all service entries. */
+  totalExperimentRuns: number;
+  /** Sum of experiments across all service entries. */
+  totalExperiments: number;
 }
 
 /**
@@ -147,17 +153,19 @@ export class HarnessClient {
    * GET /gateway/chaos/manager/api/rest/service/{accountId}
    *      ?startTime=<epochMs>&endTime=<epochMs>&page=<n>&limit=100
    *
-   * Fetches all pages of service utilisation data and counts the number of
-   * unique projects (distinct orgID/projectID) that have chaos activity —
-   * i.e. the number of projects/teams that have been onboarded.
+   * Fetches all pages of service utilisation data and aggregates:
+   *  - unique projects (distinct orgID/projectID) = teams onboarded, and
+   *  - total experiment runs / experiments across all services.
    */
-  async getOnboardedProjects(
+  async getServiceUtilisation(
     startTimeMs: number,
     endTimeMs: number
-  ): Promise<OnboardedProjects> {
+  ): Promise<ServiceUtilisationSummary> {
     const limit = 100;
     const projectKeys = new Set<string>();
     let totalServices = 0;
+    let totalExperimentRuns = 0;
+    let totalExperiments = 0;
     let page = 0;
     let total = Infinity;
 
@@ -193,6 +201,8 @@ export class HarnessClient {
         const org = (entry.orgID ?? '').trim();
         const project = (entry.projectID ?? '').trim();
         if (org || project) projectKeys.add(`${org}/${project}`);
+        totalExperimentRuns += Number(entry.experimentRuns) || 0;
+        totalExperiments += Number(entry.experiments) || 0;
       }
 
       // Stop if this page returned nothing (defensive).
@@ -204,6 +214,8 @@ export class HarnessClient {
       uniqueProjects: projectKeys.size,
       projectKeys: Array.from(projectKeys).sort(),
       totalServices,
+      totalExperimentRuns,
+      totalExperiments,
     };
   }
 }
