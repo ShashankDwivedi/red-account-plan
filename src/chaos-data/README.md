@@ -17,6 +17,11 @@ file and computes chaos onboarding thresholds from the Harness
    `GET /gateway/chaos/manager/api/rest/service/overall/stats/{accountId}?startTime=&endTime=`,
    reads `totalUsage`, and divides it by the `secondaryEntitlement` from step 2
    to produce the **license utilization percentage**.
+4. **Teams onboarded** — calls
+   `GET /gateway/chaos/manager/api/rest/service/{accountId}?startTime=&endTime=&page=&limit=100`
+   (paginated), counts the **unique projects** (distinct `orgID/projectID`) with
+   chaos activity, and divides that by the onboarding threshold from step 1 to
+   produce the **percentage of teams onboarded**.
 
 ## Setup
 
@@ -55,6 +60,7 @@ node dist/index.js --days 90
 ```
 onboarding threshold = floor(secondaryEntitlement / 3)
 license utilization  = (totalUsage / secondaryEntitlement) * 100   [%]
+teams onboarded      = (uniqueProjects / onboardingThreshold) * 100 [%]
 ```
 
 For the threshold, both the raw (fractional) value and the floored whole number

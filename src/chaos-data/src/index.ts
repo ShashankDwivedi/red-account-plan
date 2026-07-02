@@ -3,6 +3,7 @@ import { HarnessClient } from './harnessClient';
 import {
   computeOnboardingThreshold,
   computeLicenseUtilization,
+  computeTeamsOnboarded,
 } from './thresholds';
 
 /**
@@ -13,6 +14,8 @@ import {
  *    threshold for the number of projects that should be onboarded.
  * 3. Fetches overall chaos stats -> totalUsage / secondaryEntitlement gives the
  *    license utilization percentage.
+ * 4. Fetches service utilisation -> counts unique onboarded projects, then
+ *    uniqueProjects / threshold gives the percentage of teams onboarded.
  */
 async function main() {
   const asJson = process.argv.includes('--json');
@@ -35,6 +38,13 @@ async function main() {
     threshold.secondaryEntitlement
   );
 
+  // --- Step 3: percentage of teams onboarded ---------------------------------
+  const onboarded = await client.getOnboardedProjects(startTime, endTime);
+  const teams = computeTeamsOnboarded(
+    onboarded.uniqueProjects,
+    threshold.threshold
+  );
+
   if (asJson) {
     console.log(
       JSON.stringify(
@@ -43,6 +53,10 @@ async function main() {
           window: { days, startTime, endTime },
           onboardingThreshold: threshold,
           licenseUtilization: utilization,
+          teamsOnboarded: {
+            ...teams,
+            projectKeys: onboarded.projectKeys,
+          },
         },
         null,
         2
@@ -74,6 +88,15 @@ async function main() {
     `  Ratio:                   ${utilization.ratio} (= ${utilization.totalUsage} / ${utilization.secondaryEntitlement})`
   );
   console.log(`  => Utilization:          ${utilization.percentage}%`);
+  console.log('');
+  console.log(`  3) Teams onboarded (last ${days} days)`);
+  console.log('  ---------------------------------------------');
+  console.log(`  Unique projects onboarded: ${teams.uniqueProjects}`);
+  console.log(`  Onboarding threshold:      ${teams.threshold}`);
+  console.log(
+    `  Ratio:                     ${teams.ratio} (= ${teams.uniqueProjects} / ${teams.threshold})`
+  );
+  console.log(`  => Teams onboarded:        ${teams.percentage}%`);
   console.log('');
 }
 

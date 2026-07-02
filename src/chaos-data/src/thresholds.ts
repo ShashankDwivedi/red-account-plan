@@ -73,3 +73,35 @@ export function computeLicenseUtilization(
     percentage: Math.round(ratio * 100 * 10) / 10,
   };
 }
+
+export interface TeamsOnboarded {
+  uniqueProjects: number;
+  /** The onboarding threshold from step 1. */
+  threshold: number;
+  /** Fraction: uniqueProjects / threshold. */
+  ratio: number;
+  /** Percentage rounded to 1 decimal (progress toward the threshold). */
+  percentage: number;
+}
+
+/**
+ * Percentage of total teams onboarded (progress toward the threshold):
+ *   uniqueProjects / threshold  (expressed as a percentage)
+ */
+export function computeTeamsOnboarded(
+  uniqueProjects: number,
+  threshold: number
+): TeamsOnboarded {
+  if (typeof threshold !== 'number' || Number.isNaN(threshold) || threshold === 0) {
+    throw new Error(
+      'Cannot compute teams onboarded: onboarding threshold is missing or zero.'
+    );
+  }
+  const ratio = uniqueProjects / threshold;
+  return {
+    uniqueProjects,
+    threshold,
+    ratio,
+    percentage: Math.round(ratio * 100 * 10) / 10,
+  };
+}

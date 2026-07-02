@@ -30,6 +30,30 @@ export interface OverallStats {
   [key: string]: unknown;
 }
 
+/** A single service entry from the service utilisation API. */
+export interface ServiceEntry {
+  orgID?: string;
+  projectID?: string;
+  serviceID?: string;
+  [key: string]: unknown;
+}
+
+interface ServiceResponse {
+  serviceData?: ServiceEntry[];
+  total?: number;
+  [key: string]: unknown;
+}
+
+/** Result of scanning the service utilisation API for onboarded projects. */
+export interface OnboardedProjects {
+  /** Count of distinct orgID/projectID combinations with chaos activity. */
+  uniqueProjects: number;
+  /** The distinct "org/project" keys (useful for debugging / display). */
+  projectKeys: string[];
+  /** Total service entries scanned. */
+  totalServices: number;
+}
+
 /**
  * Client for the Harness licenses/modules API.
  */
@@ -117,6 +141,70 @@ export class HarnessClient {
       );
     }
     return json;
+  }
+
+  /**
+   * GET /gateway/chaos/manager/api/rest/service/{accountId}
+   *      ?startTime=<epochMs>&endTime=<epochMs>&page=<n>&limit=100
+   *
+   * Fetches all pages of service utilisation data and counts the number of
+   * unique projects (distinct orgID/projectID) that have chaos activity —
+   * i.e. the number of projects/teams that have been onboarded.
+   */
+  async getOnboardedProjects(
+    startTimeMs: number,
+    endTimeMs: number
+  ): Promise<OnboardedProjects> {
+    const limit = 100;
+    const projectKeys = new Set<string>();
+    let totalServices = 0;
+    let page = 0;
+    let total = Infinity;
+
+    // Safety bound on pages to avoid an accidental infinite loop.
+    for (let guard = 0; guard < 1000 && page * limit < total; guard++) {
+      const url =
+        `${this.cfg.baseUrl}/gateway/chaos/manager/api/rest/service/` +
+        `${encodeURIComponent(this.cfg.accountId)}` +
+        `?startTime=${startTimeMs}&endTime=${endTimeMs}&page=${page}&limit=${limit}`;
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'x-api-key': this.cfg.apiKey,
+          'Harness-Account': this.cfg.accountId,
+          Accept: 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const body = await safeText(res);
+        throw new Error(
+          `Chaos service utilisation API returned HTTP ${res.status} ${res.statusText}. ${body}`
+        );
+      }
+
+      const json = (await res.json()) as ServiceResponse;
+      const data = json.serviceData ?? [];
+      if (typeof json.total === 'number') total = json.total;
+
+      for (const entry of data) {
+        totalServices += 1;
+        const org = (entry.orgID ?? '').trim();
+        const project = (entry.projectID ?? '').trim();
+        if (org || project) projectKeys.add(`${org}/${project}`);
+      }
+
+      // Stop if this page returned nothing (defensive).
+      if (data.length === 0) break;
+      page += 1;
+    }
+
+    return {
+      uniqueProjects: projectKeys.size,
+      projectKeys: Array.from(projectKeys).sort(),
+      totalServices,
+    };
   }
 }
 
