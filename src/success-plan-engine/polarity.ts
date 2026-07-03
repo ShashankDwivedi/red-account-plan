@@ -48,6 +48,13 @@ const NEGATIVE_PATTERNS: RegExp[] = [
   /\binfo\s?sec\b.*\bcon?straint/i,
   /\b(information\s+security|infosec|security)\s+con?straint/i,
 
+  // 9) Are there Product Feature Gaps?
+  /\bproduct\b.*\bfeature\b.*\bgap/i,
+  /\bfeature\s+gap/i,
+
+  // 10) Are there Product Bugs?
+  /\bproduct\s+bug/i,
+
   // General negative phrasing safety net.
   /\bgap\b/i,
   /\bconstraint/i,
@@ -64,12 +71,9 @@ const NEGATIVE_PATTERNS: RegExp[] = [
 /**
  * Explicit NON-risk questions. Even if they'd otherwise match a general
  * safety-net pattern (e.g. "gap"), these are treated as positive questions.
+ * (Product Feature Gaps and Product Bugs have been moved to NEGATIVE_PATTERNS.)
  */
-const POSITIVE_OVERRIDES: RegExp[] = [
-  /\bproduct\b.*\bfeature\b.*\bgap/i, // Product Feature Gap(s)
-  /\bfeature\s+gap/i,
-  /\bproduct\s+bug/i, // Product Bug(s)
-];
+const POSITIVE_OVERRIDES: RegExp[] = [];
 
 /** Returns true if a ticked answer to this question is a NEGATIVE signal. */
 export function isNegativeQuestion(question: string): boolean {
