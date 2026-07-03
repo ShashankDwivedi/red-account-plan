@@ -502,10 +502,6 @@
       // Correlated risk patterns (consultant diagnosis)
       riskPatternsHtml +
 
-      // Tab breakdown
-      '<div class="card"><h3>Health by Assessment Area</h3>' +
-      '<p class="card-sub">Percentage of criteria met per worksheet tab (lowest first).</p>' +
-      '<div class="bars">' + tabsHtml + '</div></div>' +
 
       // Risks & strengths
       '<div class="two-col">' +
