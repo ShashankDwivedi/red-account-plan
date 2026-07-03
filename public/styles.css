@@ -436,7 +436,7 @@ body {
 .chip-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .chip-list li {
   font-size: 13.5px; padding: 10px 12px; border-radius: var(--radius-sm);
-  display: flex; align-items: flex-start; gap: 10px; line-height: 1.4;
+  display: flex; align-items: center; gap: 10px; line-height: 1.4;
 }
 .chip-list .tag { font-size: 10.5px; font-weight: 700; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .05em; }
 .risk-item { background: var(--red-soft); color: #7f1d1d; }
@@ -444,6 +444,17 @@ body {
 .strength-item { background: var(--green-soft); color: #14532d; }
 .strength-item .icon { color: var(--green); }
 .chip-list .icon { flex-shrink: 0; font-weight: 800; }
+.item-question { flex: 1; }
+
+/* Answer badge shown next to each item */
+.answer-badge {
+  flex-shrink: 0; margin-left: auto; padding: 1px 9px;
+  border-radius: 999px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.3px; white-space: nowrap;
+}
+.answer-yes  { background: #dcfce7; color: #15803d; }
+.answer-no   { background: #fee2e2; color: #b91c1c; }
+.answer-value { background: #eff6ff; color: #1d4ed8; }
 
 /* 30-60-90 timeline — 3 equal columns, cards start-aligned */
 .timeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: start; }

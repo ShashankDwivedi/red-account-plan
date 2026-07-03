@@ -27,6 +27,13 @@ export interface Assessment {
   isRisk: boolean;
   /** Optional notes/comment captured from an adjacent cell. */
   notes?: string;
+  /**
+   * Human-readable display value shown next to the question in the UI.
+   * For checkbox questions this is omitted (the UI shows "Yes" / "No").
+   * For numeric metrics (the four Chaos fields) this holds the actual
+   * measured number, e.g. "12" or "60%", so users see the raw figure.
+   */
+  displayValue?: string;
 }
 
 /** Aggregated results for a single tab. */

@@ -261,9 +261,20 @@
         if (groupItems.length === 0) return '';
         var lis = groupItems
           .map(function (i) {
+            // For numeric chaos metrics show the actual measured value;
+            // for all checkbox questions show Yes / No.
+            var answerText = i.displayValue != null
+              ? i.displayValue
+              : (i.answer ? 'Yes' : 'No');
+            var answerClass = i.displayValue != null
+              ? 'answer-value'
+              : (i.answer ? 'answer-yes' : 'answer-no');
             return (
-              '<li class="' + itemClass + '"><span class="icon">' + icon +
-              '</span><span>' + esc(i.question) + '</span></li>'
+              '<li class="' + itemClass + '">' +
+              '<span class="icon">' + icon + '</span>' +
+              '<span class="item-question">' + esc(i.question) + '</span>' +
+              '<span class="answer-badge ' + answerClass + '">' + esc(answerText) + '</span>' +
+              '</li>'
             );
           })
           .join('');

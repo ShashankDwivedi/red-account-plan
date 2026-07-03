@@ -430,6 +430,11 @@ function isChaosMetricLabel(question: string): boolean {
  * fields are still emitted — as gaps with an explicit "data unavailable" note —
  * so the Chaos-Data-Questionnaire tab is always analyzed and visible.
  */
+/** True if the metric key is a percentage value (needs a % suffix in display). */
+function isPctMetric(key: keyof ChaosMetrics): boolean {
+  return key === 'teamsOnboardedPct' || key === 'licenseUtilizationPct';
+}
+
 function chaosAssessments(metrics?: ChaosMetrics): Assessment[] {
   return CHAOS_ROWS.map((r) => {
     if (!metrics) {
@@ -444,13 +449,15 @@ function chaosAssessments(metrics?: ChaosMetrics): Assessment[] {
     }
     const value = metrics[r.key];
     const healthy = value >= CHAOS_THRESHOLDS[r.key];
+    const displayValue = isPctMetric(r.key) ? `${value}%` : String(value);
     return {
       tab: CHAOS_TAB,
       question: r.label,
       answer: healthy,
       negative: false,
       isRisk: !healthy,
-      notes: `Measured: ${value} (healthy when >= ${CHAOS_THRESHOLDS[r.key]})`,
+      notes: `Measured: ${displayValue} (healthy when >= ${CHAOS_THRESHOLDS[r.key]}${isPctMetric(r.key) ? '%' : ''})`,
+      displayValue,
     };
   });
 }
