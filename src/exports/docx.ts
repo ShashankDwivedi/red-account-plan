@@ -11,24 +11,47 @@ import {
   WidthType,
   BorderStyle,
   ShadingType,
-  PageBreak,
   TableLayoutType,
 } from 'docx';
-import { AnalysisResult, PlanPhase } from '../types';
+import { AnalysisResult, Assessment, PlanPhase } from '../types';
 import { BRAND, COLORS, statusColors, horizonColor, PRIORITY_COLOR, formatDate, splitByCategory } from './theme';
 
 /**
  * Executive-ready Word document built with `docx`.
  *
- * Structure:
- *   - Branded cover block (title, account, status, score).
- *   - Executive summary.
- *   - Health-by-area table (with RAG-shaded scores).
- *   - Risks & strengths.
- *   - One section per horizon with an actions table + metrics/exit lists.
+ * Structure mirrors the web UI:
+ *   - Cover block (title, account, status, score).
+ *   - Account Details (if present).
+ *   - Executive Summary ("Why Account is Red/Yellow") as bullets.
+ *   - Chaos Data Metrics (if present).
+ *   - Correlated Risk Pattern Analysis (if present).
+ *   - What's Not Working Well / What's Working Well (with Yes/No/value answers).
+ *   - One section per horizon with top-3 actions (pattern-tagged) + metrics/exits.
  */
 
 const FONT = 'Calibri';
+
+/** Priority sort — lower = higher urgency. */
+const PRIO_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2 };
+
+/** "Why Account is Red/Yellow" label matching the UI. */
+function statusLabel(status: string): string {
+  if (status === 'Green') return 'Account is Healthy';
+  if (status === 'Yellow') return 'Why Account is Yellow';
+  return 'Why Account is Red';
+}
+
+/** Display answer — matches UI badge logic. */
+function itemAnswer(item: Assessment): string {
+  if (item.displayValue != null) return item.displayValue;
+  return item.answer ? 'Yes' : 'No';
+}
+
+/** Color for an answer badge. */
+function answerColor(item: Assessment): string {
+  if (item.displayValue != null) return COLORS.brand;
+  return item.answer ? COLORS.green : COLORS.red;
+}
 
 export async function generateDocx(data: AnalysisResult): Promise<Buffer> {
   const sc = statusColors(data.overall.status);
@@ -64,50 +87,139 @@ export async function generateDocx(data: AnalysisResult): Promise<Buffer> {
     })
   );
 
-  // Meta + status card as a 2-col table.
+  // Meta + status card.
   children.push(
     shadedInfoTable([
       ['Account / Source', data.fileName],
       ['Prepared', formatDate(data.generatedAt)],
       ['Overall Health Score', `${data.overall.score} / 100`],
-      ['Account Status', data.overall.status.toUpperCase()],
+      ['Account Status', statusLabel(data.overall.status)],
     ], sc.main)
   );
 
-  // ---- Executive summary ------------------------------------------------
-  children.push(heading('Executive Summary'));
-  children.push(
-    new Paragraph({
-      spacing: { after: 200 },
-      children: [new TextRun({ text: data.executiveSummary, size: 22, color: COLORS.inkSoft, font: FONT })],
-    })
-  );
+  // ---- Account Details --------------------------------------------------
+  if (data.accountDetails && data.accountDetails.length) {
+    children.push(heading('Account Details'));
+    children.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        layout: TableLayoutType.FIXED,
+        borders: noBorders(),
+        rows: chunkArray(data.accountDetails, 2).map(
+          (rowItems) =>
+            new TableRow({
+              children: rowItems.map((d) =>
+                new TableCell({
+                  width: { size: 50, type: WidthType.PERCENTAGE },
+                  shading: { type: ShadingType.CLEAR, color: 'auto', fill: COLORS.surfaceSoft },
+                  margins: { top: 80, bottom: 80, left: 140, right: 100 },
+                  children: [
+                    new Paragraph({ children: [new TextRun({ text: d.label.toUpperCase(), bold: true, size: 16, color: COLORS.inkMuted, font: FONT, characterSpacing: 20 })] }),
+                    new Paragraph({ children: [new TextRun({ text: d.value || '—', bold: true, size: 24, color: COLORS.ink, font: FONT })] }),
+                  ],
+                })
+              ),
+            })
+        ),
+      })
+    );
+  }
 
+  // ---- Executive summary ------------------------------------------------
+  children.push(heading(statusLabel(data.overall.status)));
+  data.executiveSummary
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .forEach((line) =>
+      children.push(
+        new Paragraph({
+          spacing: { after: 80 },
+          bullet: { level: 0 },
+          children: [new TextRun({ text: line, size: 21, color: COLORS.inkSoft, font: FONT })],
+        })
+      )
+    );
   // Key stats strip.
+  children.push(new Paragraph({ spacing: { after: 120 }, children: [] }));
   children.push(statStrip(data));
 
-  // ---- Health by area ---------------------------------------------------
-  children.push(heading('Health by Assessment Area'));
-  children.push(healthTable(data));
+  // ---- Chaos Metrics ----------------------------------------------------
+  if (data.chaosMetrics) {
+    const m = data.chaosMetrics;
+    children.push(heading('Chaos Data Metrics'));
+    const cells = [
+      { label: 'Teams Onboarded', value: `${m.teamsOnboardedPct}%` },
+      { label: 'License Utilisation', value: `${m.licenseUtilizationPct}%` },
+      { label: 'Avg Monthly Runs', value: String(m.avgMonthlyExperimentRuns) },
+      { label: 'Total Experiment Runs', value: String(m.totalExperimentRuns) },
+    ];
+    children.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        layout: TableLayoutType.FIXED,
+        borders: noBorders(),
+        rows: [
+          new TableRow({
+            children: cells.map((c) =>
+              new TableCell({
+                shading: { type: ShadingType.CLEAR, color: 'auto', fill: COLORS.surfaceSoft },
+                margins: { top: 120, bottom: 120, left: 60, right: 60 },
+                children: [
+                  new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: c.value, bold: true, size: 40, color: COLORS.brand, font: FONT })] }),
+                  new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: c.label.toUpperCase(), size: 15, color: COLORS.inkMuted, font: FONT, characterSpacing: 20 })] }),
+                ],
+              })
+            ),
+          }),
+        ],
+      })
+    );
+  }
 
-  // ---- What's Not Working Well / What's Working Well (categorized) -------
+  // ---- Correlated Risk Patterns -----------------------------------------
+  if (data.riskPatterns && data.riskPatterns.length) {
+    children.push(heading('Correlated Risk Pattern Analysis'));
+    children.push(
+      new Paragraph({
+        spacing: { after: 120 },
+        children: [new TextRun({ text: 'Root-cause clusters identified by the CS consultant engine. The 30-60-90 plan addresses each pattern.', italics: true, size: 19, color: COLORS.inkMuted, font: FONT })],
+      })
+    );
+    const SEV_COLOR: Record<string, string> = { Critical: COLORS.red, High: COLORS.amber, Medium: '0891B2' };
+    data.riskPatterns.forEach((p) => {
+      const accent = SEV_COLOR[p.severity] || COLORS.brand;
+      children.push(
+        new Paragraph({
+          spacing: { before: 160, after: 40 },
+          shading: { type: ShadingType.CLEAR, color: 'auto', fill: COLORS.surfaceSoft },
+          border: { left: { color: accent, size: 16, style: BorderStyle.SINGLE, space: 8 } },
+          children: [
+            new TextRun({ text: `${p.severity.toUpperCase()}  `, bold: true, size: 18, color: accent, font: FONT }),
+            new TextRun({ text: p.name, bold: true, size: 24, color: COLORS.ink, font: FONT }),
+            new TextRun({ text: `  (${p.matchedRisks.length} risks)`, size: 18, color: COLORS.inkMuted, font: FONT }),
+          ],
+        })
+      );
+      children.push(new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: p.description, italics: true, size: 20, color: COLORS.inkSoft, font: FONT })] }));
+      children.push(new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: 'Root Cause: ', bold: true, size: 18, color: COLORS.inkMuted, font: FONT }), new TextRun({ text: p.rootCause, size: 18, color: COLORS.inkSoft, font: FONT })] }));
+      children.push(new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: 'Business Risk: ', bold: true, size: 18, color: COLORS.inkMuted, font: FONT }), new TextRun({ text: p.implication, size: 18, color: COLORS.inkSoft, font: FONT })] }));
+      const risksPreview = p.matchedRisks.slice(0, 4).join(' | ') + (p.matchedRisks.length > 4 ? ` +${p.matchedRisks.length - 4} more` : '');
+      children.push(new Paragraph({ spacing: { after: 80 }, children: [new TextRun({ text: 'Linked Risks: ', bold: true, size: 18, color: COLORS.inkMuted, font: FONT }), new TextRun({ text: risksPreview, size: 18, color: COLORS.inkSoft, font: FONT })] }));
+    });
+  }
+
+  // ---- What's Not Working Well / What's Working Well --------------------
   children.push(heading(`What's Not Working Well (${data.topRisks.length})`));
-  categorizedBullets(
-    data.topRisks, COLORS.red,
-    'Business Related Risks', 'Chaos Risks',
-    'No gaps detected — every criterion is met.'
-  ).forEach((p) => children.push(p));
+  assessmentBullets(data.topRisks, COLORS.red, 'Business Related Risks', 'Chaos Risks', 'No gaps detected.')
+    .forEach((p) => children.push(p));
 
   children.push(heading(`What's Working Well (${data.strengths.length})`));
-  categorizedBullets(
-    data.strengths, COLORS.green,
-    'Business Related Strengths', 'Chaos Strengths',
-    'None recorded.'
-  ).forEach((p) => children.push(p));
+  assessmentBullets(data.strengths, COLORS.green, 'Business Related Strengths', 'Chaos Strengths', 'None recorded.')
+    .forEach((p) => children.push(p));
 
   // ---- Phases -----------------------------------------------------------
   data.plan.forEach((phase) => {
-    children.push(new Paragraph({ children: [new PageBreak()] }));
     phaseSection(phase).forEach((el) => children.push(el));
   });
 
@@ -160,9 +272,9 @@ function subHeading(text: string, color: string): Paragraph {
   });
 }
 
-/** Render a categorized list (Business Related + Chaos) under a section. */
-function categorizedBullets(
-  items: { question: string; tab: string }[],
+/** Render a categorized list of Assessment items with Yes/No/value answer badges. */
+function assessmentBullets(
+  items: Assessment[],
   color: string,
   businessLabel: string,
   chaosLabel: string,
@@ -171,14 +283,28 @@ function categorizedBullets(
   if (!items.length) return [bullet(emptyMsg, color)];
   const { business, chaos } = splitByCategory(items);
   const out: Paragraph[] = [];
-  if (business.length) {
-    out.push(subHeading(`${businessLabel} (${business.length})`, color));
-    business.forEach((i) => out.push(bullet(i.question, color)));
+
+  function group(label: string, groupItems: Assessment[]) {
+    if (!groupItems.length) return;
+    out.push(subHeading(`${label} (${groupItems.length})`, color));
+    groupItems.forEach((item) => {
+      const ans = itemAnswer(item);
+      const aColor = answerColor(item);
+      out.push(
+        new Paragraph({
+          spacing: { after: 60 },
+          bullet: { level: 0 },
+          children: [
+            new TextRun({ text: item.question, size: 21, color: COLORS.inkSoft, font: FONT }),
+            new TextRun({ text: `  [${ans}]`, bold: true, size: 19, color: aColor, font: FONT }),
+          ],
+        })
+      );
+    });
   }
-  if (chaos.length) {
-    out.push(subHeading(`${chaosLabel} (${chaos.length})`, color));
-    chaos.forEach((i) => out.push(bullet(i.question, color)));
-  }
+
+  group(businessLabel, business);
+  group(chaosLabel, chaos);
   return out;
 }
 
@@ -253,56 +379,6 @@ function statStrip(data: AnalysisResult): Table {
   });
 }
 
-function healthTable(data: AnalysisResult): Table {
-  const headerRow = new TableRow({
-    tableHeader: true,
-    children: ['Assessment Area', 'Yes / Total', 'Score', 'Status'].map(
-      (h, i) =>
-        new TableCell({
-          shading: { type: ShadingType.CLEAR, color: 'auto', fill: COLORS.brandDark },
-          margins: { top: 80, bottom: 80, left: 120, right: 120 },
-          children: [new Paragraph({ alignment: i === 0 ? AlignmentType.LEFT : AlignmentType.CENTER, children: [new TextRun({ text: h.toUpperCase(), bold: true, size: 16, color: 'FFFFFF', font: FONT })] })],
-        })
-    ),
-  });
-
-  const rows = data.tabs.map((t) => {
-    const col = t.score >= 75 ? COLORS.green : t.score >= 45 ? COLORS.amber : COLORS.red;
-    const label = t.score >= 75 ? 'Green' : t.score >= 45 ? 'Yellow' : 'Red';
-    return new TableRow({
-      children: [
-        cellText(t.tab, AlignmentType.LEFT),
-        cellText(`${t.yes} / ${t.total}`, AlignmentType.CENTER),
-        new TableCell({
-          margins: { top: 60, bottom: 60, left: 120, right: 120 },
-          verticalAlign: 'center' as any,
-          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `${t.score}%`, bold: true, size: 20, color: col, font: FONT })] })],
-        }),
-        new TableCell({
-          shading: { type: ShadingType.CLEAR, color: 'auto', fill: statusSoft(label) },
-          margins: { top: 60, bottom: 60, left: 120, right: 120 },
-          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: label, bold: true, size: 18, color: col, font: FONT })] })],
-        }),
-      ],
-    });
-  });
-
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
-    columnWidths: [50, 18, 16, 16].map((p) => Math.round((p / 100) * 9000)),
-    borders: {
-      top: { style: BorderStyle.SINGLE, size: 2, color: COLORS.line },
-      bottom: { style: BorderStyle.SINGLE, size: 2, color: COLORS.line },
-      left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-      right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-      insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: COLORS.line },
-      insideVertical: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-    },
-    rows: [headerRow, ...rows],
-  });
-}
-
 function cellText(text: string, align: (typeof AlignmentType)[keyof typeof AlignmentType]): TableCell {
   return new TableCell({
     margins: { top: 60, bottom: 60, left: 120, right: 120 },
@@ -310,8 +386,14 @@ function cellText(text: string, align: (typeof AlignmentType)[keyof typeof Align
   });
 }
 
-function statusSoft(label: string): string {
-  return label === 'Green' ? COLORS.greenSoft : label === 'Yellow' ? COLORS.amberSoft : COLORS.redSoft;
+function prioritySoft(priority: string): string {
+  return priority === 'Critical' ? COLORS.redSoft : priority === 'High' ? COLORS.amberSoft : 'ECFEFF';
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
 }
 
 function phaseSection(phase: PlanPhase): (Paragraph | Table)[] {
@@ -320,7 +402,11 @@ function phaseSection(phase: PlanPhase): (Paragraph | Table)[] {
   const titlePart = phase.label.split('·').slice(1).join('·').trim() || phase.label;
   const out: (Paragraph | Table)[] = [];
 
-  // Colored header band (single-cell shaded table).
+  // pageBreakBefore on an empty paragraph prevents the blank-page issue that a
+  // manual PageBreak element causes when preceding content ends at page bottom.
+  out.push(new Paragraph({ pageBreakBefore: true, spacing: { before: 0, after: 0 }, children: [] }));
+
+  // Colored header band.
   out.push(
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -351,10 +437,16 @@ function phaseSection(phase: PlanPhase): (Paragraph | Table)[] {
     })
   );
 
-  // Actions table.
+  // Top 3 actions sorted by priority (matches UI).
+  const topActions = phase.actions
+    .slice()
+    .sort((a, b) => (PRIO_ORDER[a.priority] ?? 9) - (PRIO_ORDER[b.priority] ?? 9))
+    .slice(0, 3);
+
+  // Actions table header.
   const actionHeader = new TableRow({
     tableHeader: true,
-    children: ['Action', 'Owner', 'Priority'].map(
+    children: ['#', 'Action', 'Owner', 'Priority'].map(
       (h) =>
         new TableCell({
           shading: { type: ShadingType.CLEAR, color: 'auto', fill: COLORS.surfaceSoft },
@@ -364,19 +456,22 @@ function phaseSection(phase: PlanPhase): (Paragraph | Table)[] {
     ),
   });
 
-  const actionRows = phase.actions.map((a) => {
+  const actionRows = topActions.map((a, idx) => {
     const pc = PRIORITY_COLOR[a.priority] || COLORS.brand;
+    // First sentence only — mirrors UI.
+    const firstSentence = (a.detail.split('\n\n')[0].match(/^[^.!?]+[.!?]/)?.[0] || a.detail).slice(0, 200);
     const paras: Paragraph[] = [
       new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: a.title, bold: true, size: 21, color: COLORS.ink, font: FONT })] }),
-      new Paragraph({ children: [new TextRun({ text: a.detail, size: 19, color: COLORS.inkSoft, font: FONT })] }),
+      new Paragraph({ children: [new TextRun({ text: firstSentence, size: 19, color: COLORS.inkSoft, font: FONT })] }),
     ];
-    if (a.addresses) {
-      paras.push(new Paragraph({ spacing: { before: 40 }, children: [new TextRun({ text: `Addresses: ${a.addresses}`, italics: true, size: 16, color: COLORS.inkMuted, font: FONT })] }));
+    if (a.patternName) {
+      paras.push(new Paragraph({ spacing: { before: 40 }, children: [new TextRun({ text: `Pattern: ${a.patternName}`, italics: true, size: 16, color: COLORS.brand, font: FONT })] }));
     }
     return new TableRow({
       children: [
-        new TableCell({ width: { size: 62, type: WidthType.PERCENTAGE }, margins: { top: 100, bottom: 100, left: 120, right: 120 }, children: paras }),
-        new TableCell({ width: { size: 22, type: WidthType.PERCENTAGE }, margins: { top: 100, bottom: 100, left: 120, right: 120 }, children: [new Paragraph({ children: [new TextRun({ text: a.owner, size: 18, color: COLORS.inkSoft, font: FONT })] })] }),
+        new TableCell({ width: { size: 5, type: WidthType.PERCENTAGE }, margins: { top: 100, bottom: 100, left: 120, right: 60 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(idx + 1), bold: true, size: 20, color: COLORS.inkMuted, font: FONT })] })] }),
+        new TableCell({ width: { size: 58, type: WidthType.PERCENTAGE }, margins: { top: 100, bottom: 100, left: 120, right: 120 }, children: paras }),
+        new TableCell({ width: { size: 21, type: WidthType.PERCENTAGE }, margins: { top: 100, bottom: 100, left: 120, right: 120 }, children: [new Paragraph({ children: [new TextRun({ text: a.owner, size: 18, color: COLORS.inkSoft, font: FONT })] })] }),
         new TableCell({
           width: { size: 16, type: WidthType.PERCENTAGE },
           shading: { type: ShadingType.CLEAR, color: 'auto', fill: prioritySoft(a.priority) },
@@ -391,7 +486,7 @@ function phaseSection(phase: PlanPhase): (Paragraph | Table)[] {
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       layout: TableLayoutType.FIXED,
-      columnWidths: [62, 22, 16].map((p) => Math.round((p / 100) * 9000)),
+      columnWidths: [5, 58, 21, 16].map((p) => Math.round((p / 100) * 9000)),
       borders: {
         top: { style: BorderStyle.SINGLE, size: 2, color: COLORS.line },
         bottom: { style: BorderStyle.SINGLE, size: 2, color: COLORS.line },
@@ -404,19 +499,17 @@ function phaseSection(phase: PlanPhase): (Paragraph | Table)[] {
     })
   );
 
-  // Metrics & exit criteria.
+  // Success Metrics.
   out.push(
     new Paragraph({ spacing: { before: 200, after: 80 }, children: [new TextRun({ text: 'Success Metrics', bold: true, size: 20, color: accent, font: FONT })] })
   );
   phase.successMetrics.forEach((m) => out.push(bullet(m, accent)));
+
+  // Exit Criteria.
   out.push(
     new Paragraph({ spacing: { before: 120, after: 80 }, children: [new TextRun({ text: 'Exit Criteria', bold: true, size: 20, color: accent, font: FONT })] })
   );
   phase.exitCriteria.forEach((x) => out.push(bullet(x, accent)));
 
   return out;
-}
-
-function prioritySoft(priority: string): string {
-  return priority === 'Critical' ? COLORS.redSoft : priority === 'High' ? COLORS.amberSoft : 'ECFEFF';
 }

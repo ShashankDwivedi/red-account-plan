@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { AnalysisResult, PlanPhase } from '../types';
+import { AnalysisResult, Assessment, PlanPhase } from '../types';
 import {
   BRAND,
   COLORS,
@@ -14,18 +14,20 @@ import {
 /**
  * Executive-ready PDF built with pdfkit.
  *
- * Layout:
- *   1. Cover page  – brand, title, account, RAG status, health score ring.
- *   2. Executive summary + health dashboard (tab bars, risks/strengths).
- *   3. One section per horizon (30 / 60 / 90) with actions, metrics, exits.
- *
- * Design language mirrors the web UI: slate ink, indigo brand, RAG accents,
- * generous whitespace, and a consistent footer.
+ * Layout (mirrors the web UI):
+ *   1. Cover page
+ *   2. Account Details (if present) + Executive Summary + Chaos Metrics (if present)
+ *   3. Correlated Risk Pattern Analysis (if present)
+ *   4. What's Not Working Well / What's Working Well (with Yes/No/value badges)
+ *   5. One section per horizon (30 / 60 / 90) — top 3 actions, pattern tags
  */
 
 const PAGE = { width: 595.28, height: 841.89 }; // A4 portrait (pt)
 const M = 56; // page margin
 const CONTENT_W = PAGE.width - M * 2;
+
+/** Priority sort order — lower = higher priority. */
+const PRIO_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2 };
 
 /**
  * pdfkit's built-in Helvetica uses WinAnsi encoding and cannot render many
@@ -44,6 +46,19 @@ function s(text: string): string {
     .replace(/[\u2026]/g, '...') // ellipsis
     .replace(/[\u2713\u2714\u2705]/g, 'Y') // check marks
     .replace(/[\u2715\u2716\u2717\u2718\u2573]/g, 'X'); // crosses
+}
+
+/** Label shown for the account status — matches the UI "Why Account is Red" wording. */
+function statusLabel(status: string): string {
+  if (status === 'Green') return 'Account is Healthy';
+  if (status === 'Yellow') return 'Why Account is Yellow';
+  return 'Why Account is Red';
+}
+
+/** Display value shown next to a risk/strength item (matches UI badge logic). */
+function itemAnswer(item: Assessment): string {
+  if (item.displayValue != null) return item.displayValue;
+  return item.answer ? 'Yes' : 'No';
 }
 
 export function generatePdf(data: AnalysisResult): Promise<Buffer> {
@@ -67,6 +82,10 @@ export function generatePdf(data: AnalysisResult): Promise<Buffer> {
     try {
       drawCover(doc, data);
       drawSummary(doc, data);
+      if (data.riskPatterns && data.riskPatterns.length) {
+        drawPatterns(doc, data);
+      }
+      drawRisksAndStrengths(doc, data);
       data.plan.forEach((phase) => drawPhase(doc, phase, data));
       addFooters(doc);
       doc.end();
@@ -138,13 +157,13 @@ function drawCover(doc: PDFKit.PDFDocument, data: AnalysisResult) {
   const ringCy = 500;
   drawScoreRing(doc, ringCx, ringCy, 62, data.overall.score, sc.main);
 
-  // Status badge (dot + label, laid out left-to-right and centered as a unit).
-  const badgeText = `ACCOUNT STATUS: ${data.overall.status.toUpperCase()}`;
-  doc.font('Helvetica-Bold').fontSize(12);
+  // Status badge.
+  const badgeText = statusLabel(data.overall.status).toUpperCase();
+  doc.font('Helvetica-Bold').fontSize(11);
   const textW = doc.widthOfString(badgeText);
   const dotGap = 10;
   const dotR = 5;
-  const padX = 22;
+  const padX = 20;
   const bw = padX * 2 + dotR * 2 + dotGap + textW;
   const bx = ringCx - bw / 2;
   const by = ringCy + 92;
@@ -153,7 +172,7 @@ function drawCover(doc: PDFKit.PDFDocument, data: AnalysisResult) {
   doc
     .fill(hex(sc.main))
     .font('Helvetica-Bold')
-    .fontSize(12)
+    .fontSize(11)
     .text(badgeText, bx + padX + dotR * 2 + dotGap, by + 11, {
       width: textW + 4,
       lineBreak: false,
@@ -168,18 +187,18 @@ function drawCover(doc: PDFKit.PDFDocument, data: AnalysisResult) {
   ];
   const sy = 660;
   const colW = CONTENT_W / stats.length;
-  stats.forEach((s, i) => {
+  stats.forEach((st, i) => {
     const x = M + i * colW;
     doc
-      .fill(hex(s.color || COLORS.ink))
+      .fill(hex(st.color || COLORS.ink))
       .font('Helvetica-Bold')
       .fontSize(24)
-      .text(s.value, x, sy, { width: colW, align: 'center' });
+      .text(st.value, x, sy, { width: colW, align: 'center' });
     doc
       .fill(hex(COLORS.inkMuted))
       .font('Helvetica')
       .fontSize(9)
-      .text(s.label.toUpperCase(), x, sy + 30, {
+      .text(st.label.toUpperCase(), x, sy + 30, {
         width: colW,
         align: 'center',
         characterSpacing: 1,
@@ -188,68 +207,199 @@ function drawCover(doc: PDFKit.PDFDocument, data: AnalysisResult) {
 }
 
 // --------------------------------------------------------------------------
-// Summary + dashboard page
+// Summary page: Account Details + Executive Summary + Chaos Metrics
 // --------------------------------------------------------------------------
 function drawSummary(doc: PDFKit.PDFDocument, data: AnalysisResult) {
   doc.addPage();
   let y = M;
 
-  y = sectionHeading(doc, 'Executive Summary', y);
-  doc
-    .fill(hex(COLORS.inkSoft))
-    .font('Helvetica')
-    .fontSize(11)
-    .text(s(data.executiveSummary), M, y, { width: CONTENT_W, lineGap: 4 });
-  y = doc.y + 24;
-
-  // Health by area.
-  y = sectionHeading(doc, 'Health by Assessment Area', y);
-  data.tabs.forEach((t) => {
-    if (y > PAGE.height - M - 40) {
-      doc.addPage();
-      y = M;
-    }
-    y = drawBar(doc, s(t.tab), t.score, `${t.yes}/${t.total} yes`, y);
-  });
-  y += 16;
-
-  // Risks & strengths — full-width stacked lists so every item is shown.
-  if (y > PAGE.height - M - 160) {
-    doc.addPage();
-    y = M;
+  // ---- Account Details ---------------------------------------------------
+  if (data.accountDetails && data.accountDetails.length) {
+    y = sectionHeading(doc, 'Account Details', y);
+    const cols = 2;
+    const cellW = (CONTENT_W - 16) / cols;
+    let colIdx = 0;
+    data.accountDetails.forEach((d, i) => {
+      const col = i % cols;
+      const x = M + col * (cellW + 16);
+      if (col === 0 && i !== 0) {
+        y += 46;
+        if (y > PAGE.height - M - 60) { doc.addPage(); y = M; }
+      }
+      doc
+        .fill(hex(COLORS.inkMuted))
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .text(s(d.label).toUpperCase(), x, y, { characterSpacing: 1 });
+      doc
+        .fill(hex(COLORS.ink))
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .text(s(d.value || '\u2014'), x, y + 12, { width: cellW });
+      colIdx = col;
+    });
+    y += 46 + 16;
+    if (y > PAGE.height - M - 100) { doc.addPage(); y = M; }
   }
+
+  // ---- Executive Summary -------------------------------------------------
+  y = sectionHeading(doc, statusLabel(data.overall.status), y);
+  const summaryLines = data.executiveSummary
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  summaryLines.forEach((line) => {
+    if (y + 20 > PAGE.height - M) { doc.addPage(); y = M; }
+    doc.fill(hex(COLORS.brand)).font('Helvetica-Bold').fontSize(10).text('>', M, y + 1);
+    doc
+      .fill(hex(COLORS.inkSoft))
+      .font('Helvetica')
+      .fontSize(11)
+      .text(s(line), M + 14, y, { width: CONTENT_W - 14, lineGap: 3 });
+    y = doc.y + 6;
+  });
+  y += 12;
+
+  // Stats strip.
+  if (y > PAGE.height - M - 60) { doc.addPage(); y = M; }
+  const statW = CONTENT_W / 4;
+  const statsData = [
+    { label: 'Criteria', value: String(data.overall.total), color: COLORS.ink },
+    { label: 'Met (Yes)', value: String(data.overall.yes), color: COLORS.green },
+    { label: 'Gaps (No)', value: String(data.overall.no), color: COLORS.red },
+    { label: 'Areas', value: String(data.tabs.length), color: COLORS.brand },
+  ];
+  statsData.forEach((st, i) => {
+    const x = M + i * statW;
+    doc.fill(hex(st.color)).font('Helvetica-Bold').fontSize(20).text(st.value, x, y, { width: statW, align: 'center' });
+    doc.fill(hex(COLORS.inkMuted)).font('Helvetica').fontSize(8).text(st.label.toUpperCase(), x, y + 24, { width: statW, align: 'center', characterSpacing: 1 });
+  });
+  y += 50;
+
+  // ---- Chaos Metrics (if present) ----------------------------------------
+  if (data.chaosMetrics) {
+    if (y > PAGE.height - M - 120) { doc.addPage(); y = M; }
+    const m = data.chaosMetrics;
+    y = sectionHeading(doc, 'Chaos Data Metrics', y);
+    const metrics = [
+      { label: 'Teams Onboarded', value: `${m.teamsOnboardedPct}%` },
+      { label: 'License Utilisation', value: `${m.licenseUtilizationPct}%` },
+      { label: 'Avg Monthly Runs', value: String(m.avgMonthlyExperimentRuns) },
+      { label: 'Total Experiment Runs', value: String(m.totalExperimentRuns) },
+    ];
+    const tileW = (CONTENT_W - 16 * 3) / 4;
+    metrics.forEach((mt, i) => {
+      const x = M + i * (tileW + 16);
+      card(doc, x, y, tileW, 60);
+      doc.fill(hex(COLORS.brand)).font('Helvetica-Bold').fontSize(18).text(mt.value, x, y + 8, { width: tileW, align: 'center' });
+      doc.fill(hex(COLORS.inkMuted)).font('Helvetica').fontSize(8).text(mt.label.toUpperCase(), x, y + 34, { width: tileW, align: 'center', characterSpacing: 0.5 });
+    });
+    y += 76;
+  }
+}
+
+// --------------------------------------------------------------------------
+// Correlated Risk Patterns page
+// --------------------------------------------------------------------------
+function drawPatterns(doc: PDFKit.PDFDocument, data: AnalysisResult) {
+  if (!data.riskPatterns || !data.riskPatterns.length) return;
+  doc.addPage();
+  let y = M;
+
+  y = sectionHeading(doc, 'Correlated Risk Pattern Analysis', y);
+  doc
+    .fill(hex(COLORS.inkMuted))
+    .font('Helvetica')
+    .fontSize(9)
+    .text(
+      'The CS consultant engine identified these root-cause clusters. The 30-60-90 plan addresses each pattern, not just individual checkboxes.',
+      M, y, { width: CONTENT_W, lineGap: 2 }
+    );
+  y = doc.y + 16;
+
+  const SEV_COLOR: Record<string, string> = {
+    Critical: COLORS.red,
+    High: COLORS.amber,
+    Medium: '0891B2',
+  };
+
+  data.riskPatterns.forEach((p) => {
+    const accent = SEV_COLOR[p.severity] || COLORS.brand;
+
+    // Estimate pattern card height.
+    doc.font('Helvetica').fontSize(9.5);
+    const descH = doc.heightOfString(s(p.description), { width: CONTENT_W - 32, lineGap: 2 });
+    const rootH = doc.heightOfString(s(p.rootCause), { width: CONTENT_W - 120 - 32, lineGap: 2 });
+    const implH = doc.heightOfString(s(p.implication), { width: CONTENT_W - 120 - 32, lineGap: 2 });
+    const risksText = p.matchedRisks.slice(0, 4).map(s).join(' | ') + (p.matchedRisks.length > 4 ? ` +${p.matchedRisks.length - 4} more` : '');
+    const risksH = doc.heightOfString(risksText, { width: CONTENT_W - 120 - 32, lineGap: 2 });
+    const boxH = 16 + 20 + descH + 12 + Math.max(rootH, 14) + 8 + Math.max(implH, 14) + 8 + Math.max(risksH, 14) + 16;
+
+    if (y + boxH > PAGE.height - M - 20) { doc.addPage(); y = M; }
+
+    card(doc, M, y, CONTENT_W, boxH);
+    doc.rect(M, y, 4, boxH).fill(hex(accent));
+
+    // Severity + name header.
+    doc.fill(hex(accent)).font('Helvetica-Bold').fontSize(8).text(p.severity.toUpperCase(), M + 16, y + 14, { characterSpacing: 1 });
+    doc.fill(hex(COLORS.ink)).font('Helvetica-Bold').fontSize(13).text(s(p.name), M + 16, y + 28, { width: CONTENT_W - 80 });
+    const countText = `${p.matchedRisks.length} risks`;
+    doc.font('Helvetica').fontSize(8);
+    const cw = doc.widthOfString(countText) + 14;
+    roundedRect(doc, M + CONTENT_W - cw - 4, y + 14, cw, 18, 9).fill(hex(COLORS.surfaceSoft));
+    doc.fill(hex(accent)).font('Helvetica-Bold').fontSize(8).text(countText, M + CONTENT_W - cw - 4, y + 19, { width: cw, align: 'center' });
+
+    let cy = y + 46;
+    // Description.
+    doc.fill(hex(COLORS.inkSoft)).font('Helvetica-Oblique').fontSize(9.5)
+      .text(s(p.description), M + 16, cy, { width: CONTENT_W - 32, lineGap: 2 });
+    cy = doc.y + 10;
+
+    // Root Cause / Business Risk / Matched Risks rows.
+    const labelW = 110;
+    const valW = CONTENT_W - 32 - labelW;
+
+    [
+      { key: 'Root Cause:', val: p.rootCause },
+      { key: 'Business Risk:', val: p.implication },
+      { key: 'Linked Risks:', val: risksText },
+    ].forEach((row) => {
+      doc.fill(hex(COLORS.inkMuted)).font('Helvetica-Bold').fontSize(8.5).text(s(row.key), M + 16, cy, { width: labelW, characterSpacing: 0.5 });
+      doc.fill(hex(COLORS.inkSoft)).font('Helvetica').fontSize(8.5).text(s(row.val), M + 16 + labelW, cy, { width: valW, lineGap: 1 });
+      cy = Math.max(doc.y, cy + 14) + 6;
+    });
+
+    y = y + boxH + 12;
+  });
+}
+
+// --------------------------------------------------------------------------
+// What's Not Working Well / What's Working Well
+// --------------------------------------------------------------------------
+function drawRisksAndStrengths(doc: PDFKit.PDFDocument, data: AnalysisResult) {
+  if (!data.topRisks.length && !data.strengths.length) return;
+  // Always start on a fresh page so risks/strengths never share a page with patterns.
+  doc.addPage();
+  let y = M;
+
   y = sectionHeading(doc, "What's Not Working Well & What's Working Well", y);
 
   const risks = splitByCategory(data.topRisks);
   const strengths = splitByCategory(data.strengths);
 
-  // What's Not Working Well (risks), categorized.
-  y = drawList(
-    doc, M, y, CONTENT_W,
-    `WHAT'S NOT WORKING WELL — BUSINESS RELATED RISKS (${risks.business.length})`,
-    risks.business.map((r) => s(r.question)), COLORS.red, 'X'
-  );
-  y += 10;
-  y = drawList(
-    doc, M, y, CONTENT_W,
-    `WHAT'S NOT WORKING WELL — CHAOS RISKS (${risks.chaos.length})`,
-    risks.chaos.map((r) => s(r.question)), COLORS.red, 'X'
-  );
-  y += 16;
+  const prevBizRisk = y;
+  y = drawAssessmentList(doc, M, y, CONTENT_W, `WHAT'S NOT WORKING WELL — BUSINESS RELATED (${risks.business.length})`, risks.business, COLORS.red, 'X');
+  if (y !== prevBizRisk) y += 10;
 
-  // What's Working Well (strengths), categorized.
-  y = drawList(
-    doc, M, y, CONTENT_W,
-    `WHAT'S WORKING WELL — BUSINESS RELATED STRENGTHS (${strengths.business.length})`,
-    strengths.business.map((x) => s(x.question)), COLORS.green, 'Y'
-  );
-  y += 10;
-  y = drawList(
-    doc, M, y, CONTENT_W,
-    `WHAT'S WORKING WELL — CHAOS STRENGTHS (${strengths.chaos.length})`,
-    strengths.chaos.map((x) => s(x.question)), COLORS.green, 'Y'
-  );
-  doc.y = y;
+  const prevChaosRisk = y;
+  y = drawAssessmentList(doc, M, y, CONTENT_W, `WHAT'S NOT WORKING WELL — CHAOS (${risks.chaos.length})`, risks.chaos, COLORS.red, 'X');
+  if (y !== prevChaosRisk) y += 16;
+
+  const prevBizStr = y;
+  y = drawAssessmentList(doc, M, y, CONTENT_W, `WHAT'S WORKING WELL — BUSINESS RELATED (${strengths.business.length})`, strengths.business, COLORS.green, 'Y');
+  if (y !== prevBizStr) y += 10;
+
+  drawAssessmentList(doc, M, y, CONTENT_W, `WHAT'S WORKING WELL — CHAOS (${strengths.chaos.length})`, strengths.chaos, COLORS.green, 'Y');
 }
 
 // --------------------------------------------------------------------------
@@ -269,7 +419,7 @@ function drawPhase(
     .fill(hex(COLORS.white))
     .font('Helvetica-Bold')
     .fontSize(11)
-    .text(s(`DAYS ${phase.horizon === 30 ? '0–30' : phase.horizon === 60 ? '31–60' : '61–90'}`), M, 32, {
+    .text(s(`DAYS ${phase.horizon === 30 ? '0-30' : phase.horizon === 60 ? '31-60' : '61-90'}`), M, 32, {
       characterSpacing: 2,
     });
   const titlePart = phase.label.split('\u00B7').slice(1).join('\u00B7').trim();
@@ -297,8 +447,13 @@ function drawPhase(
     .text(s(phase.objective), M, y, { width: CONTENT_W, lineGap: 3 });
   y = doc.y + 18;
 
-  // Actions.
-  phase.actions.forEach((a) => {
+  // Top 3 actions sorted by priority (matches UI).
+  const topActions = phase.actions
+    .slice()
+    .sort((a, b) => (PRIO_ORDER[a.priority] ?? 9) - (PRIO_ORDER[b.priority] ?? 9))
+    .slice(0, 3);
+
+  topActions.forEach((a) => {
     const needed = estimateActionHeight(doc, a.title, a.detail, a.owner, a.addresses);
     if (y + needed > PAGE.height - M - 20) {
       doc.addPage();
@@ -374,45 +529,77 @@ function drawBar(
   return y + 24;
 }
 
-function drawList(
+/**
+ * Draws a list of Assessment items with a Yes/No (or displayValue) badge.
+ * Returns y unchanged if items is empty (caller decides on gaps).
+ */
+function drawAssessmentList(
   doc: PDFKit.PDFDocument,
   x: number,
   y: number,
   w: number,
   title: string,
-  items: string[],
+  items: Assessment[],
   color: string,
-  bullet: string
+  bulletChar: string
 ): number {
+  if (!items.length) return y;
+
+  // Ensure there's enough room for the title + at least one item.
+  if (y + 32 > PAGE.height - M) {
+    doc.addPage();
+    y = M;
+  }
   doc
     .fill(hex(color))
     .font('Helvetica-Bold')
     .fontSize(9)
     .text(title, x, y, { characterSpacing: 1 });
   let cy = y + 16;
-  const list = items.length ? items : ['None recorded.'];
-  list.forEach((it) => {
-    // Measure this item and break to a new page if it won't fit.
+
+  items.forEach((item) => {
     doc.font('Helvetica').fontSize(9.5);
-    const itemH = doc.heightOfString(s(it), { width: w - 16, lineGap: 1 });
+    const answerText = itemAnswer(item);
+    const answerColor = item.displayValue != null
+      ? COLORS.brand
+      : item.answer ? COLORS.green : COLORS.red;
+
+    // Measure row height (question text wraps, badge stays on first line).
+    const badgeW = 36;
+    const textW = w - 16 - badgeW - 6;
+    const itemH = doc.heightOfString(s(item.question), { width: textW, lineGap: 1 });
     if (cy + itemH > PAGE.height - M) {
       doc.addPage();
       cy = M;
     }
-    doc.fill(hex(color)).font('Helvetica-Bold').fontSize(9).text(bullet, x, cy);
+
+    // Bullet.
+    doc.fill(hex(color)).font('Helvetica-Bold').fontSize(9).text(bulletChar, x, cy);
+    // Question text — save doc.y afterward so multi-line questions advance cy correctly.
     doc
       .fill(hex(COLORS.inkSoft))
       .font('Helvetica')
       .fontSize(9.5)
-      .text(s(it), x + 14, cy - 1, { width: w - 16, lineGap: 1 });
-    cy = doc.y + 8;
+      .text(s(item.question), x + 14, cy - 1, { width: textW, lineGap: 1 });
+    const afterQuestion = doc.y;
+    // Answer badge (pill).
+    const badgeX = x + w - badgeW;
+    roundedRect(doc, badgeX, cy, badgeW, 14, 7).fill(
+      hex(answerColor === COLORS.green ? COLORS.greenSoft : answerColor === COLORS.red ? COLORS.redSoft : COLORS.brandSoft)
+    );
+    doc
+      .fill(hex(answerColor))
+      .font('Helvetica-Bold')
+      .fontSize(7.5)
+      .text(answerText, badgeX, cy + 3, { width: badgeW, align: 'center' });
+    cy = afterQuestion + 8;
   });
   return cy;
 }
 
 function drawAction(
   doc: PDFKit.PDFDocument,
-  a: { title: string; detail: string; owner: string; priority: string; addresses?: string },
+  a: { title: string; detail: string; owner: string; priority: string; addresses?: string; patternName?: string },
   y: number,
   accent: string
 ): number {
@@ -423,12 +610,12 @@ function drawAction(
   // Measure heights.
   doc.font('Helvetica-Bold').fontSize(12);
   const titleH = doc.heightOfString(a.title, { width: innerW - 90 });
+  // Show first sentence of detail only (mirrors UI).
+  const firstSentence = (a.detail.split('\n\n')[0].match(/^[^.!?]+[.!?]/)?.[0] || a.detail).slice(0, 180);
   doc.font('Helvetica').fontSize(10);
-  const detailH = doc.heightOfString(a.detail, { width: innerW, lineGap: 2 });
-  const addressesH = a.addresses
-    ? doc.heightOfString(`Addresses: ${a.addresses}`, { width: innerW }) + 6
-    : 0;
-  const boxH = 14 + Math.max(titleH, 16) + 6 + detailH + 16 + addressesH + 14;
+  const detailH = doc.heightOfString(firstSentence, { width: innerW, lineGap: 2 });
+  const patternH = a.patternName ? 18 : 0;
+  const boxH = 14 + Math.max(titleH, 16) + 6 + patternH + detailH + 16 + 14;
 
   // Card.
   card(doc, M, startY, CONTENT_W, boxH);
@@ -454,14 +641,23 @@ function drawAction(
     .font('Helvetica-Bold')
     .fontSize(12)
     .text(s(a.title), M + padX, cy, { width: innerW - chipW - 10 });
-  cy = doc.y + 6;
+  cy = doc.y + 4;
 
-  // Detail.
+  // Pattern tag (if present).
+  if (a.patternName) {
+    doc.font('Helvetica').fontSize(8);
+    const tagW = Math.min(doc.widthOfString(a.patternName) + 14, innerW);
+    roundedRect(doc, M + padX, cy, tagW, 14, 7).fill(hex(COLORS.brandSoft));
+    doc.fill(hex(COLORS.brand)).text(s(a.patternName), M + padX + 7, cy + 3, { width: tagW - 14, lineBreak: false });
+    cy += 18;
+  }
+
+  // Detail (first sentence).
   doc
     .fill(hex(COLORS.inkSoft))
     .font('Helvetica')
     .fontSize(10)
-    .text(s(a.detail), M + padX, cy, { width: innerW, lineGap: 2 });
+    .text(s(firstSentence), M + padX, cy, { width: innerW, lineGap: 2 });
   cy = doc.y + 8;
 
   // Owner.
@@ -473,16 +669,6 @@ function drawAction(
     .fill(hex(COLORS.inkSoft))
     .font('Helvetica')
     .text(s(a.owner));
-  cy = doc.y + 2;
-
-  if (a.addresses) {
-    doc
-      .fill(hex(COLORS.inkMuted))
-      .font('Helvetica-Oblique')
-      .fontSize(8.5)
-      .text(s(`Addresses: ${a.addresses}`), M + padX, cy + 4, { width: innerW });
-    cy = doc.y;
-  }
 
   return startY + boxH + 12;
 }
@@ -510,7 +696,7 @@ function drawMiniList(
     .text(title, x + 14, y + 14, { characterSpacing: 1 });
   let cy = y + 30;
   items.forEach((it) => {
-    doc.fill(hex(accent)).font('Helvetica-Bold').fontSize(9).text('›', x + 14, cy);
+    doc.fill(hex(accent)).font('Helvetica-Bold').fontSize(9).text('>', x + 14, cy);
     doc
       .fill(hex(COLORS.inkSoft))
       .font('Helvetica')
@@ -530,9 +716,7 @@ function drawScoreRing(
   color: string
 ) {
   const lw = 12;
-  // Track.
   doc.lineWidth(lw).strokeColor(hex(COLORS.line)).circle(cx, cy, r).stroke();
-  // Progress arc.
   const start = -Math.PI / 2;
   const end = start + (Math.PI * 2 * Math.min(100, Math.max(0, score))) / 100;
   doc
@@ -564,7 +748,6 @@ function describeArc(
   start: number,
   end: number
 ): string {
-  // Build an SVG arc path across possibly >180deg by segmenting.
   const segments = 60;
   let d = '';
   for (let i = 0; i <= segments; i++) {
@@ -609,9 +792,9 @@ function estimateActionHeight(
   doc.font('Helvetica-Bold').fontSize(12);
   const t = doc.heightOfString(title, { width: innerW - 90 });
   doc.font('Helvetica').fontSize(10);
-  const d = doc.heightOfString(detail, { width: innerW, lineGap: 2 });
-  const a = addresses ? 24 : 0;
-  return 14 + Math.max(t, 16) + 6 + d + 30 + a + 24;
+  const firstSentence = (detail.split('\n\n')[0].match(/^[^.!?]+[.!?]/)?.[0] || detail).slice(0, 180);
+  const d = doc.heightOfString(firstSentence, { width: innerW, lineGap: 2 });
+  return 14 + Math.max(t, 16) + 6 + d + 30 + 24;
 }
 
 // --------------------------------------------------------------------------
@@ -619,11 +802,14 @@ function estimateActionHeight(
 // --------------------------------------------------------------------------
 function addFooters(doc: PDFKit.PDFDocument) {
   const range = doc.bufferedPageRange();
-  for (let i = 0; i < range.count; i++) {
+  const totalPages = range.count;
+  for (let i = 0; i < totalPages; i++) {
     doc.switchToPage(range.start + i);
     // Skip footer on cover (page 0).
     if (i === 0) continue;
-    const y = PAGE.height - 34;
+    // Keep y well within the content area (PAGE.height - M = 785.89).
+    // Drawing beyond that would trigger pdfkit's auto-addPage, creating blank pages.
+    const y = PAGE.height - M - 22;
     doc
       .lineWidth(0.5)
       .strokeColor(hex(COLORS.line))
@@ -634,12 +820,12 @@ function addFooters(doc: PDFKit.PDFDocument) {
       .fill(hex(COLORS.inkMuted))
       .font('Helvetica')
       .fontSize(8)
-      .text(s(`${BRAND.name} | ${BRAND.tagline}`), M, y + 8, { lineBreak: false });
+      .text(s(`${BRAND.name} | ${BRAND.tagline}`), M, y + 6, { lineBreak: false });
     doc
       .fill(hex(COLORS.inkMuted))
       .font('Helvetica')
       .fontSize(8)
-      .text(`Page ${i + 1} of ${range.count}`, M, y + 8, {
+      .text(`Page ${i + 1} of ${totalPages}`, M, y + 6, {
         width: CONTENT_W,
         align: 'right',
       });
