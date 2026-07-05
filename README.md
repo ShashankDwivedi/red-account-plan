@@ -1,138 +1,264 @@
 # Red Account Plan
 
-A **Node.js + TypeScript** web app that turns an Excel **account health assessment** into an actionable **30-60-90 day Customer Success plan** to move an account from **Red → Yellow → Green**.
+A Node.js + TypeScript web app for Harness Customer Success teams. Upload an Excel account health assessment and get an instant, AI-quality **30-60-90 day success plan** that diagnoses why an account is at risk and prescribes the exact actions needed to move it from Red → Yellow → Green.
 
-## What it does
+---
 
-1. **Upload** — A clean, drag-and-drop UI lets you upload an Excel workbook (`.xlsx` / `.xls`).
-2. **Parse** — The backend reads **every tab** in the workbook and interprets checkboxes:
-   - **Ticked = Yes** (`TRUE`, `Yes`, `Y`, `x`, `✓`, `1`, `[x]`, native cell checkboxes, …)
-   - **Unticked = No** (`FALSE`, `No`, `N`, empty, `☐`, `0`, …)
-3. **Plan** — A Customer Success engine scores account health across CS pillars
-   (Relationship, Value, Adoption, Sentiment, Support, Commercial) and generates a
-   phased 30-60-90 recovery plan with owners, success metrics, and exit criteria.
-4. **Export** — Download the plan as an executive-ready **PDF**, **Word (.docx)**,
-   or **PowerPoint (.pptx)** — all sharing one consistent, branded design system.
+## What Does the App Do?
 
-## Tech
+### 1. Upload & Parse an Account Health Assessment
 
-- **Backend:** Express + TypeScript
-- **Excel parsing:** ExcelJS (multi-format checkbox detection)
-- **Upload:** Multer (in-memory, nothing persisted)
-- **Exports:** PDFKit (PDF), docx (Word), pptxgenjs (PowerPoint)
-- **Frontend:** Vanilla HTML/CSS/JS (no build step), Inter typeface
+Drag and drop a structured Excel workbook (`.xlsx`). The app reads two questionnaire tabs:
 
-## Run it
+- **`Harness-Questionnaire`** — checkbox-based questions across business dimensions (adoption, stakeholder engagement, support health, product fit, etc.)
+- **`Chaos-Data-Questionnaire`** — chaos engineering metrics (license utilisation, teams onboarded, experiment runs, etc.)
+- **`Account_Details`** — optional account metadata (name, ARR, region, renewal date, CSM, etc.)
+
+### 2. Fetch Live Chaos Metrics from Harness API *(optional)*
+
+If a `HARNESS_API_KEY` or `HARNESS_BEARER_TOKEN` is configured, the app automatically fetches four chaos metrics from the Harness platform for the account:
+
+| Metric | Description |
+|---|---|
+| **Teams Onboarded %** | Projects actively running chaos vs. entitlement threshold |
+| **License Utilisation %** | Services utilised vs. secondary entitlement |
+| **Avg Monthly Experiment Runs** | Average runs per month over the selected date window |
+| **Total Experiment Runs** | Cumulative runs in the date window |
+
+> **On-prem / SMP customers**: If these four values are already filled in the Excel, the app skips the API call and uses the manual data instead.
+
+> **Custom date range**: You can specify a `From` and `To` date in the UI to scope the chaos metrics query. Defaults to the last 365 days.
+
+### 3. Identify What's Working & What's Not
+
+The app scores every question and categorises findings into:
+
+- **What's Not Working Well** — risks, split into *Business Related* and *Chaos* categories, with each answer shown (Yes/No or absolute value)
+- **What's Working Well** — strengths, similarly categorised
+
+### 4. Correlate Risks into Patterns
+
+Individual risks are correlated into root-cause clusters (e.g. *"Low Platform Adoption"*, *"Chaos Engineering Not Operationalised"*, *"Weak Executive Alignment"*). This mimics how a senior Customer Success consultant thinks — looking past individual symptoms to understand the underlying problem.
+
+### 5. Generate a Consultant-Quality 30-60-90 Day Plan
+
+The plan engine produces three prioritised, actionable phases:
+
+| Phase | Focus |
+|---|---|
+| **Days 1–30** | Stabilise — address the most critical risks immediately |
+| **Days 31–60** | Build — establish repeatable processes and quick wins |
+| **Days 61–90** | Scale — drive strategic alignment and long-term value |
+
+Each phase surfaces the **top 3 actionable items**, tagged with the pattern they address.
+
+### 6. Export to PDF, Word, and PowerPoint
+
+One click generates executive-ready documents, all matching the UI layout:
+
+- 📄 **PDF** — full plan with cover, account details, executive summary, chaos metrics, risk patterns, risks/strengths, and phased actions
+- 📝 **Word (.docx)** — same content in an editable Word document
+- 📊 **PowerPoint (.pptx)** — slide deck ready for executive presentations
+
+---
+
+## Project Structure
+
+```
+red-account-plan/
+├── public/                        # Frontend (vanilla JS / HTML / CSS)
+│   ├── index.html
+│   ├── app.js
+│   └── styles.css
+├── src/
+│   ├── server.ts                  # Express server & API endpoints
+│   ├── types.ts                   # Shared TypeScript types
+│   ├── chaos-data/                # Harness API integration
+│   │   └── src/
+│   │       ├── index.ts           # CLI tool: npx ts-node src/chaos-data/src/index.ts
+│   │       ├── config.ts          # Loads .env config (API key / bearer token)
+│   │       ├── harnessClient.ts   # HTTP client for Harness APIs
+│   │       └── thresholds.ts     # Metric scoring & threshold calculations
+│   ├── success-plan-engine/       # Core plan generation logic
+│   │   ├── excelParser.ts         # Reads & scores the Excel questionnaire
+│   │   ├── planEngine.ts          # Pattern detection + 30-60-90 plan builder
+│   │   ├── chaosData.ts           # Bridges chaos-data lib into the engine
+│   │   └── polarity.ts            # Classifies positive vs. risk-flag questions
+│   └── exports/                   # Document generation
+│       ├── pdf.ts
+│       ├── docx.ts
+│       └── pptx.ts
+├── .env                           # Local credentials (not committed)
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## Prerequisites
+
+- **Node.js** ≥ 20 (check with `node -v`)
+- **npm** ≥ 9 (bundled with Node 20+)
+- A Harness account with Chaos module (optional — only needed for live metric fetching)
+
+---
+
+## Setup
+
+### Option A — Cursor (Recommended)
+
+1. **Open the project in Cursor**
+   ```bash
+   cursor /path/to/red-account-plan
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Create your `.env` file** in the project root:
+   ```env
+   # Use ONE of the following auth options:
+
+   # Option 1 — Personal Access Token (PAT)
+   HARNESS_API_KEY=pat.YOUR_ACCOUNT_ID.YOUR_KEY_ID.YOUR_SECRET
+
+   # Option 2 — Bearer Token (use this if HARNESS_API_KEY is unavailable)
+   HARNESS_BEARER_TOKEN=your-bearer-token-here
+
+   HARNESS_BASE_URL=https://app.harness.io
+   HARNESS_ACCOUNT_ID=your-harness-account-id
+   ```
+   > If `HARNESS_API_KEY` is commented out or absent, the app automatically falls back to `HARNESS_BEARER_TOKEN`.
+
+4. **Start the dev server**
+   ```bash
+   npx ts-node src/server.ts
+   ```
+   The app is now running at **http://localhost:3000**
+
+5. *(Optional)* Ask Cursor's AI agent to help: open the chat panel and say *"restart the server"* or *"fetch chaos data for account X"*.
+
+---
+
+### Option B — VS Code
+
+1. **Open the project**
+   ```bash
+   code /path/to/red-account-plan
+   ```
+
+2. **Install dependencies** in the VS Code terminal:
+   ```bash
+   npm install
+   ```
+
+3. **Create your `.env` file** (same as above).
+
+4. **Add a launch configuration** — create `.vscode/launch.json`:
+   ```json
+   {
+     "version": "0.2.0",
+     "configurations": [
+       {
+         "name": "Start Server",
+         "type": "node",
+         "request": "launch",
+         "runtimeExecutable": "npx",
+         "runtimeArgs": ["ts-node", "src/server.ts"],
+         "cwd": "${workspaceFolder}",
+         "console": "integratedTerminal",
+         "env": {}
+       }
+     ]
+   }
+   ```
+   Press **F5** to start, or run in the terminal:
+   ```bash
+   npx ts-node src/server.ts
+   ```
+
+5. Open **http://localhost:3000** in your browser.
+
+---
+
+### Option C — Claude (Claude.ai Projects / MCP)
+
+If you are using Claude with MCP filesystem access:
+
+1. Point Claude at the project directory via your MCP filesystem config.
+2. Ask Claude to:
+   - Read the `.env` file for account credentials
+   - Run `npx ts-node src/chaos-data/src/index.ts` to fetch chaos metrics
+   - Start the server with `npx ts-node src/server.ts`
+3. Claude can answer questions about account data, fetch Harness metrics, and help debug the plan output — all by reading the project files directly.
+
+---
+
+## Running the Chaos Data CLI
+
+You can fetch chaos metrics independently from the command line without uploading an Excel file:
 
 ```bash
-npm install
-npm run build
-npm start
-# open http://localhost:3000
+# Last 365 days (default)
+npx ts-node src/chaos-data/src/index.ts
+
+# Custom date range
+npx ts-node src/chaos-data/src/index.ts --start-date 2026-01-01 --end-date 2026-06-30
+
+# Custom lookback window
+npx ts-node src/chaos-data/src/index.ts --days 90
 ```
 
-Or in watch mode during development:
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Serves the web UI |
+| `POST` | `/api/analyze` | Upload Excel → returns full success plan JSON |
+| `POST` | `/api/fill` | Upload Excel → returns filled workbook with chaos data |
+| `POST` | `/api/export/pdf` | Upload Excel → returns generated PDF |
+| `POST` | `/api/export/docx` | Upload Excel → returns generated Word document |
+| `POST` | `/api/export/pptx` | Upload Excel → returns generated PowerPoint |
+
+All `POST` endpoints accept `multipart/form-data` with:
+- `file` — the `.xlsx` workbook
+- `startDate` *(optional)* — `YYYY-MM-DD` start of chaos data window
+- `endDate` *(optional)* — `YYYY-MM-DD` end of chaos data window
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `HARNESS_API_KEY` | One of these | Personal Access Token (`pat.ACCOUNT.KEY.SECRET`) |
+| `HARNESS_BEARER_TOKEN` | ↑ | JWT bearer token (fallback when API key is absent) |
+| `HARNESS_ACCOUNT_ID` | Yes | Your Harness account ID |
+| `HARNESS_BASE_URL` | No | Defaults to `https://app.harness.io` |
+
+---
+
+## Building for Production
 
 ```bash
-npm run dev
+npm run build       # Compiles TypeScript → dist/
+npm start           # Runs the compiled server
 ```
 
-## Deploy for free on Render
+---
 
-This repo is deploy-ready for [Render](https://render.com) (free tier). It
-includes a `render.yaml` Blueprint, a pinned Node version (`.node-version`),
-and a `/api/health` health check.
+## Tech Stack
 
-### Option A — Blueprint (recommended, zero config)
-
-1. Push this project to a GitHub repo.
-2. In Render: **New +  ->  Blueprint**, select your repo.
-3. Render reads `render.yaml` and provisions the web service automatically.
-   Click **Apply** and wait for the first build.
-
-### Option B — Manual web service
-
-1. In Render: **New +  ->  Web Service**, connect your repo.
-2. Configure:
-   - **Runtime:** Node
-   - **Build Command:** `npm install && npm run build`
-   - **Start Command:** `npm start`
-   - **Health Check Path:** `/api/health`
-3. Create the service.
-
-Notes:
-
-- The app reads `process.env.PORT`, which Render injects automatically — no
-  changes needed.
-- On the **free** plan the instance sleeps after ~15 min idle; the first
-  request afterward takes ~30–50s to wake (cold start). This is expected.
-- Nothing is persisted to disk; uploads and generated documents are handled in
-  memory per request, which suits Render's ephemeral filesystem.
-
-## Generate a sample workbook to try
-
-```bash
-npm run build
-node dist/scripts/makeSample.js
-# creates sample-account-health.xlsx in the project root
-```
-
-## How checkboxes are interpreted
-
-Excel templates encode "checkboxes" in several ways. This app handles the common ones:
-
-| In the sheet                         | Interpreted as |
-| ------------------------------------ | -------------- |
-| `TRUE` / native cell checkbox on     | ✅ Yes         |
-| `Yes`, `Y`, `x`, `✓`, `✔`, `1`, `[x]` | ✅ Yes         |
-| `FALSE`, `No`, `N`, blank, `0`, `[ ]` | ❌ No          |
-
-### Positive vs. negative (risk-flag) questions
-
-Most questions are **positive** — ticked (Yes) is *good*. But some are **risk
-flags** where ticking the box signals a *problem*, so ticked = bad. These are
-detected automatically (see `src/polarity.ts`) and correctly **lower** the
-health score. Examples:
-
-- Did Champion Leave the Company
-- Did Sponsor Leave the Company?
-- Is there a re-org that happened?
-- Training Gap
-- Customer Resource Constraints
-- Customer Technical Constraints
-- Vulnerability Constraints
-- Infosec Constraints
-
-Internally every answer is normalized to a health signal (`isRisk`):
-
-| Question type | Ticked (Yes) | Unticked (No) |
-| ------------- | ------------ | ------------- |
-| Positive      | healthy ✅   | problem ❌    |
-| Negative/risk | problem ❌   | healthy ✅    |
-
-Each row is scanned for a **label** (the question text) and an **answer** (a
-boolean-ish marker). Legacy form-control checkboxes are read from the raw sheet
-XML when present.
-
-## Project structure
-
-```
-src/
-  server.ts        Express app + upload & export endpoints
-  excelParser.ts   Reads tabs & detects ticked checkboxes
-  planEngine.ts    Scores health & builds the 30-60-90 plan
-  types.ts         Shared domain types
-  exports/
-    theme.ts       Shared brand palette / design tokens
-    pdf.ts         Executive-ready PDF generator (PDFKit)
-    docx.ts        Word document generator (docx)
-    pptx.ts        PowerPoint deck generator (pptxgenjs)
-  scripts/
-    makeSample.ts  Generates a demo assessment workbook
-public/
-  index.html       Upload + results UI
-  styles.css       Design system
-  app.js           Client logic, rendering & export downloads
-```
-
-> No uploaded data is stored — files are processed in memory for the request only.
+| Layer | Technology |
+|---|---|
+| Backend | Node.js, TypeScript, Express |
+| Excel parsing | ExcelJS |
+| PDF generation | PDFKit |
+| Word generation | docx |
+| PowerPoint generation | pptxgenjs |
+| File uploads | Multer |
+| Frontend | Vanilla HTML / CSS / JavaScript |
