@@ -79,6 +79,33 @@
               </div>
             </label>
 
+            <!-- Optional date range for Harness API chaos data fetch -->
+            <details class="date-range-details">
+              <summary class="date-range-summary">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none"
+                  stroke="currentColor" stroke-width="1.6"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="1" y="3" width="14" height="12" rx="2"/>
+                  <path d="M5 1v4M11 1v4M1 7h14"/>
+                </svg>
+                Chaos data date range
+                <span class="date-range-badge" id="date-range-badge">Last 365 days</span>
+              </summary>
+              <div class="date-range-body">
+                <p class="date-range-hint">
+                  Applies only when Harness API credentials are configured.
+                  Leave blank to use the last 365 days.
+                </p>
+                <div class="date-range-row">
+                  <label class="date-label" for="start-date">From</label>
+                  <input id="start-date" name="startDate" type="date" class="date-input" />
+                  <label class="date-label" for="end-date">To</label>
+                  <input id="end-date" name="endDate" type="date" class="date-input" />
+                  <button type="button" id="clear-dates-btn" class="btn-clear-dates">Clear</button>
+                </div>
+              </div>
+            </details>
+
             <button id="analyze-btn" type="submit" class="btn-primary" disabled>
               <span class="btn-label">Generate Success Plan</span>
               <span class="spinner" hidden></span>

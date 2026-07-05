@@ -72,6 +72,11 @@ app.post(
       let metrics: ChaosMetrics | undefined;
       const warnings: string[] = [];
 
+      // Optional date-range override sent as multipart form fields.
+      // Falls back to last 365 days when absent.
+      const startDate = typeof req.body?.startDate === 'string' ? req.body.startDate.trim() : undefined;
+      const endDate   = typeof req.body?.endDate   === 'string' ? req.body.endDate.trim()   : undefined;
+
       // Check if the customer has manually filled all four chaos metric values
       // in the Chaos-Data-Questionnaire tab (typical for on-prem / SMP customers
       // who cannot expose the Harness API externally). If so, use those values
@@ -83,7 +88,7 @@ app.post(
       } else {
         // Cloud customer or incomplete manual data: fetch live from Harness API.
         try {
-          metrics = await fetchChaosMetrics();
+          metrics = await fetchChaosMetrics(365, startDate, endDate);
         } catch (e) {
           const reason = e instanceof Error ? e.message : String(e);
           console.warn('Chaos metrics fetch failed:', reason);
@@ -149,7 +154,9 @@ app.post(
         return res.status(400).json({ error: 'No file uploaded.' });
       }
 
-      const metrics = await fetchChaosMetrics();
+      const fillStart = typeof req.body?.startDate === 'string' ? req.body.startDate.trim() : undefined;
+      const fillEnd   = typeof req.body?.endDate   === 'string' ? req.body.endDate.trim()   : undefined;
+      const metrics = await fetchChaosMetrics(365, fillStart, fillEnd);
       const buffer = await fillWorkbook(req.file.buffer, metrics);
 
       const base = req.file.originalname.replace(/\.[^.]+$/, '');

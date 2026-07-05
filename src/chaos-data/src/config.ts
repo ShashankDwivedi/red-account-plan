@@ -3,9 +3,14 @@ import * as path from 'path';
 
 /**
  * Harness connection details resolved from the environment / .env file.
+ *
+ * `authType` controls which HTTP header carries the credential:
+ *   - 'api-key'  →  x-api-key: <token>
+ *   - 'bearer'   →  Authorization: Bearer <token>
  */
 export interface HarnessConfig {
   apiKey: string;
+  authType: 'api-key' | 'bearer';
   baseUrl: string;
   accountId: string;
 }
@@ -77,13 +82,17 @@ export function loadConfig(): HarnessConfig {
   const pick = (name: string): string | undefined =>
     process.env[name] ?? fromFiles[name];
 
-  const apiKey = pick('HARNESS_API_KEY') ?? pick('HARNESS_TOKEN');
-  const baseUrl =
-    pick('HARNESS_BASE_URL') ?? 'https://app.harness.io';
+  // Precedence: HARNESS_API_KEY → HARNESS_TOKEN → HARNESS_BEARER_TOKEN
+  const apiKeyValue     = pick('HARNESS_API_KEY') ?? pick('HARNESS_TOKEN');
+  const bearerToken     = pick('HARNESS_BEARER_TOKEN');
+  const apiKey          = apiKeyValue ?? bearerToken;
+  const authType: HarnessConfig['authType'] = apiKeyValue ? 'api-key' : 'bearer';
+
+  const baseUrl  = pick('HARNESS_BASE_URL') ?? 'https://app.harness.io';
   const accountId = pick('HARNESS_ACCOUNT_ID');
 
   const missing: string[] = [];
-  if (!apiKey) missing.push('HARNESS_API_KEY');
+  if (!apiKey) missing.push('HARNESS_API_KEY (or HARNESS_BEARER_TOKEN)');
   if (!accountId) missing.push('HARNESS_ACCOUNT_ID');
   if (missing.length) {
     throw new Error(
@@ -94,6 +103,7 @@ export function loadConfig(): HarnessConfig {
 
   return {
     apiKey: apiKey as string,
+    authType,
     baseUrl: baseUrl.replace(/\/+$/, ''),
     accountId: accountId as string,
   };

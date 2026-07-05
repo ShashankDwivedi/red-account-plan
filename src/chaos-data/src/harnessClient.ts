@@ -66,6 +66,22 @@ export interface ServiceUtilisationSummary {
 export class HarnessClient {
   constructor(private readonly cfg: HarnessConfig) {}
 
+  /** Build the auth header appropriate for the configured credential type. */
+  private authHeaders(): Record<string, string> {
+    if (this.cfg.authType === 'bearer') {
+      return {
+        Authorization: `Bearer ${this.cfg.apiKey}`,
+        'Harness-Account': this.cfg.accountId,
+        Accept: 'application/json',
+      };
+    }
+    return {
+      'x-api-key': this.cfg.apiKey,
+      'Harness-Account': this.cfg.accountId,
+      Accept: 'application/json',
+    };
+  }
+
   /**
    * GET /gateway/ng/api/licenses/modules/{accountId}?moduleType=CHAOS
    *
@@ -78,14 +94,7 @@ export class HarnessClient {
       `?routingId=${encodeURIComponent(this.cfg.accountId)}` +
       `&moduleType=${encodeURIComponent(moduleType)}`;
 
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'x-api-key': this.cfg.apiKey,
-        'Harness-Account': this.cfg.accountId,
-        Accept: 'application/json',
-      },
-    });
+    const res = await fetch(url, { method: 'GET', headers: this.authHeaders() });
 
     if (!res.ok) {
       const body = await safeText(res);
@@ -124,14 +133,7 @@ export class HarnessClient {
       `${encodeURIComponent(this.cfg.accountId)}` +
       `?startTime=${startTimeMs}&endTime=${endTimeMs}`;
 
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'x-api-key': this.cfg.apiKey,
-        'Harness-Account': this.cfg.accountId,
-        Accept: 'application/json',
-      },
-    });
+    const res = await fetch(url, { method: 'GET', headers: this.authHeaders() });
 
     if (!res.ok) {
       const body = await safeText(res);
@@ -176,14 +178,7 @@ export class HarnessClient {
         `${encodeURIComponent(this.cfg.accountId)}` +
         `?startTime=${startTimeMs}&endTime=${endTimeMs}&page=${page}&limit=${limit}`;
 
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'x-api-key': this.cfg.apiKey,
-          'Harness-Account': this.cfg.accountId,
-          Accept: 'application/json',
-        },
-      });
+      const res = await fetch(url, { method: 'GET', headers: this.authHeaders() });
 
       if (!res.ok) {
         const body = await safeText(res);

@@ -11,9 +11,35 @@
   const errorBox = document.getElementById('error-box');
   const uploadView = document.getElementById('upload-view');
   const resultsView = document.getElementById('results-view');
+  const startDateInput = document.getElementById('start-date');
+  const endDateInput = document.getElementById('end-date');
+  const dateRangeBadge = document.getElementById('date-range-badge');
+  const clearDatesBtn = document.getElementById('clear-dates-btn');
 
   let selectedFile = null;
   let currentAnalysis = null;
+
+  // ---- Date range badge update --------------------------------------------
+  function updateDateBadge() {
+    const s = startDateInput.value;
+    const e = endDateInput.value;
+    if (s && e) {
+      dateRangeBadge.textContent = s + ' \u2192 ' + e;
+    } else if (s) {
+      dateRangeBadge.textContent = s + ' \u2192 today';
+    } else if (e) {
+      dateRangeBadge.textContent = 'up to ' + e;
+    } else {
+      dateRangeBadge.textContent = 'Last 365 days';
+    }
+  }
+  startDateInput.addEventListener('input', updateDateBadge);
+  endDateInput.addEventListener('input', updateDateBadge);
+  clearDatesBtn.addEventListener('click', function () {
+    startDateInput.value = '';
+    endDateInput.value = '';
+    updateDateBadge();
+  });
 
   // ---- Helpers ----------------------------------------------------------
   function esc(str) {
@@ -122,6 +148,8 @@
     try {
       const fd = new FormData();
       fd.append('file', selectedFile);
+      if (startDateInput.value) fd.append('startDate', startDateInput.value);
+      if (endDateInput.value)   fd.append('endDate',   endDateInput.value);
       const res = await fetch('/api/analyze', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong.');
@@ -189,6 +217,8 @@
     try {
       const fd = new FormData();
       fd.append('file', selectedFile);
+      if (startDateInput.value) fd.append('startDate', startDateInput.value);
+      if (endDateInput.value)   fd.append('endDate',   endDateInput.value);
       const res = await fetch('/api/fill', { method: 'POST', body: fd });
       if (!res.ok) {
         let msg = 'Could not fill the workbook.';

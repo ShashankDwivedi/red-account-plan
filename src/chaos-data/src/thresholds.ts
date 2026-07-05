@@ -119,15 +119,22 @@ export interface ExperimentRunStats {
 /**
  * Experiment run stats:
  *   total       = sum of experimentRuns across services
- *   avg monthly = totalExperimentRuns / 12
+ *   avg monthly = totalExperimentRuns / monthsDivisor
+ *
+ * @param totalExperimentRuns  sum of experiment runs across all service entries
+ * @param monthsDivisor        number of months in the query window (default 12).
+ *                             Pass the actual window duration so the average is
+ *                             correct when a custom date range is used.
  */
 export function computeExperimentRunStats(
-  totalExperimentRuns: number
+  totalExperimentRuns: number,
+  monthsDivisor = MONTHS_IN_YEAR
 ): ExperimentRunStats {
-  const avg = totalExperimentRuns / MONTHS_IN_YEAR;
+  const divisor = Math.max(1, monthsDivisor);
+  const avg = totalExperimentRuns / divisor;
   return {
     totalExperimentRuns,
-    monthsDivisor: MONTHS_IN_YEAR,
+    monthsDivisor: divisor,
     avgMonthlyExperimentRuns: Math.round(avg * 10) / 10,
   };
 }
